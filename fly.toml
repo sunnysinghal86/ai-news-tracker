@@ -1,0 +1,28 @@
+# fly.toml — Alternative: Deploy backend to Fly.io (always-on, generous free tier)
+# Run: fly launch --config fly.toml
+
+app = "ai-signal-backend"
+primary_region = "sin"   # Singapore — change to closest: ams, cdg, iad, lax, etc.
+
+[build]
+  dockerfile = "backend/Dockerfile"
+
+[http_service]
+  internal_port = 8000
+  force_https   = true
+  auto_stop_machines  = false   # Keep always-on
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[mounts]
+  source      = "ai_signal_data"
+  destination = "/app/data"
+
+[[services.ports]]
+  port = 443
+  handlers = ["tls", "http"]
