@@ -48,6 +48,19 @@ def gen_id(url: str) -> str:
     return hashlib.md5(url.encode()).hexdigest()[:12]
 
 
+def strip_html(text: str) -> str:
+    """Strip HTML tags and decode entities to plain text."""
+    import re as _re
+    text = _re.sub(r'<style[^>]*>.*?</style>', ' ', text, flags=_re.DOTALL | _re.IGNORECASE)
+    text = _re.sub(r'<script[^>]*>.*?</script>', ' ', text, flags=_re.DOTALL | _re.IGNORECASE)
+    text = _re.sub(r'<[^>]+>', ' ', text)
+    text = text.replace('&nbsp;', ' ').replace('&amp;', '&')
+    text = text.replace('&lt;', '<').replace('&gt;', '>').replace('&quot;', '"')
+    text = _re.sub(r'&#\d+;', '', text)
+    text = _re.sub(r'\s+', ' ', text).strip()
+    return text[:500]  # cap at 500 chars for storage
+
+
 def is_relevant(title: str, content: str = "") -> bool:
     text = (title + " " + content).lower()
     return any(kw.lower() in text for kw in AI_KEYWORDS)
@@ -84,7 +97,7 @@ async def fetch_hackernews(session: aiohttp.ClientSession) -> List[RawArticle]:
                     url=hit.get("url") or f"https://news.ycombinator.com/item?id={hit.get('objectID')}",
                     source="Hacker News",
                     published_at=published,
-                    content=hit.get("story_text", "") or "",
+                    content=strip_html(hit.get("story_text", "") or ""),
                     author=hit.get("author", ""),
                     tags=["hacker-news"],
                     score=hit.get("points", 0)
@@ -182,7 +195,7 @@ async def fetch_newsapi(session: aiohttp.ClientSession) -> List[RawArticle]:
                 url=item.get("url", ""),
                 source=f"NewsAPI / {source_name}",
                 published_at=published,
-                content=desc,
+                content=strip_html(desc),
                 author=item.get("author", ""),
                 tags=["news"],
                 score=0
@@ -230,7 +243,7 @@ async def fetch_medium(session: aiohttp.ClientSession) -> List[RawArticle]:
                     url=item.get("link", ""),
                     source="Medium",
                     published_at=published,
-                    content=item.get("description", "")[:500],
+                    content=strip_html(item.get("description", "") or ""),
                     author=item.get("author", ""),
                     tags=["medium"],
                     score=0
