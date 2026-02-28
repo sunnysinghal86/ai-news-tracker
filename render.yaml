@@ -2,7 +2,7 @@ services:
   - type: web
     name: ai-signal-backend
     runtime: python
-    region: oregon
+    #region: oregon
     plan: free
     rootDir: backend
     buildCommand: pip install -r requirements.txt
@@ -27,7 +27,7 @@ services:
   - type: web
     name: ai-signal-frontend
     runtime: static
-    region: oregon
+    #region: oregon
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
