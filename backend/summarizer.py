@@ -135,12 +135,14 @@ For competitors: only include if is_product_or_tool is true. List 2-3 most relev
 async def summarize_articles(articles, max_concurrent: int = 5) -> List[ProcessedArticle]:
     """Process all articles with rate limiting"""
     if not ANTHROPIC_API_KEY:
-        logger.warning("No API key - returning articles without AI analysis")
+        logger.warning("No ANTHROPIC_API_KEY - summaries unavailable. Set the key to enable AI summaries.")
         return [ProcessedArticle(
             id=a.id, title=a.title, url=a.url, source=a.source,
             published_at=a.published_at.isoformat() if hasattr(a.published_at, 'isoformat') else str(a.published_at),
             author=a.author, score=a.score, tags=a.tags or [],
-            summary=a.content[:200] if a.content else ""
+            summary=a.content[:300].strip() if a.content and len(a.content) > 30
+                    else f"From {a.source}. Click the headline to read the full article.",
+            relevance_score=5,
         ) for a in articles]
     
     semaphore = asyncio.Semaphore(max_concurrent)
@@ -164,6 +166,70 @@ async def summarize_articles(articles, max_concurrent: int = 5) -> List[Processe
     return processed
 
 
-def analyze_competitors(article_data: dict) -> dict:
-    """Sync wrapper for on-demand competitor analysis (used by API)"""
-    return article_data  # Already embedded in processed article
+async def enrich_article_content(article: RawArticle, session: aiohttp.ClientSession) -> RawArticle:
+    """
+    For articles with no body text (most HN/NewsAPI items are title+URL only),
+    fetch the page and extract og:description / meta description as a content stub.
+    This gives Claude enough context to write a meaningful summary.
+    """
+    if article.content and len(article.content) > 80:
+        return article  # Already has content
+    if not article.url or article.url.startswith("https://news.ycombinator.com"):
+        return article  # Skip HN comment pages
+
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; AISignalBot/1.0)"}
+        async with session.get(article.url, headers=headers,
+                               timeout=aiohttp.ClientTimeout(total=8),
+                               allow_redirects=True) as resp:
+            if resp.status != 200:
+                return article
+            ct = resp.headers.get("content-type", "")
+            if "html" not in ct:
+                return article
+            html = await resp.text(errors="ignore")
+
+        # Extract og:description or meta description (no heavy parser needed)
+        import re
+        patterns = [
+            r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\'](.*?)["\']',
+            r'<meta[^>]+content=["\'](.*?)["\'][^>]+property=["\']og:description["\']',
+            r'<meta[^>]+name=["\']description["\'][^>]+content=["\'](.*?)["\']',
+            r'<meta[^>]+content=["\'](.*?)["\'][^>]+name=["\']description["\']',
+        ]
+        for pat in patterns:
+            m = re.search(pat, html, re.IGNORECASE | re.DOTALL)
+            if m:
+                desc = m.group(1).strip()[:500]
+                if len(desc) > 40:
+                    article.content = desc
+                    return article
+    except Exception:
+        pass  # Silently skip — enrichment is best-effort
+
+    return article
+
+
+async def enrich_all(articles: List[RawArticle]) -> List[RawArticle]:
+    """Enrich up to 40 articles concurrently (best-effort meta description fetch)"""
+    sem = asyncio.Semaphore(10)
+    timeout = aiohttp.ClientTimeout(total=10)
+    connector = aiohttp.TCPConnector(limit=20)
+
+    async def bounded(article, session):
+        async with sem:
+            return await enrich_article_content(article, session)
+
+    async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+        results = await asyncio.gather(
+            *[bounded(a, session) for a in articles],
+            return_exceptions=True
+        )
+
+    enriched = []
+    for r in results:
+        if isinstance(r, Exception):
+            enriched.append(articles[len(enriched)])  # fallback to original
+        else:
+            enriched.append(r)
+    return enriched

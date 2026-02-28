@@ -15,7 +15,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from database import init_db, get_db
 from news_fetcher import fetch_all_news
-from summarizer import summarize_articles, analyze_competitors
+from summarizer import summarize_articles, enrich_all
 from emailer import send_daily_digest
 from models import User, EmailConfig, NewsItem
 from routers import news, users, config
@@ -102,7 +102,11 @@ async def refresh_news_job():
     try:
         articles = await fetch_all_news()
         logger.info(f"📰 Fetched {len(articles)} articles")
-        
+
+        # Enrich articles that have no body text (HN, NewsAPI title-only items)
+        articles = await enrich_all(articles)
+        logger.info(f"✨ Enriched article content")
+
         # Summarize and analyze in batches
         processed = await summarize_articles(articles)
         logger.info(f"🤖 Processed {len(processed)} articles with AI")
