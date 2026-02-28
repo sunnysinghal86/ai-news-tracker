@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from database import get_db
 from typing import List, Optional
 
@@ -10,12 +10,6 @@ class UserCreate(BaseModel):
     name: str
     categories: Optional[List[str]] = []
     min_relevance: int = 5
-
-class UserUpdate(BaseModel):
-    name: Optional[str] = None
-    categories: Optional[List[str]] = None
-    min_relevance: Optional[int] = None
-    active: Optional[bool] = None
 
 @router.get("")
 async def list_users():
