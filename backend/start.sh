@@ -1,36 +1,47 @@
 #!/bin/bash
-set -e
-
-echo "=== Starting AI Signal Backend ==="
+echo "=== AI Signal Backend ==="
 echo "Python: $(python --version)"
-echo "Working dir: $(pwd)"
-echo "Files: $(ls)"
+echo "Dir: $(pwd)"
 
 echo ""
-echo "=== Checking imports ==="
+echo "=== Import check ==="
 python -c "
-import sys
-try:
-    import fastapi; print('OK fastapi', fastapi.__version__)
-    import aiosqlite; print('OK aiosqlite')
-    import aiohttp; print('OK aiohttp')
-    import apscheduler; print('OK apscheduler')
-    import feedparser; print('OK feedparser')
-    print('--- app modules ---')
-    import database; print('OK database')
-    import news_fetcher; print('OK news_fetcher')
-    import summarizer; print('OK summarizer')
-    import emailer; print('OK emailer')
-    import models; print('OK models')
-    from routers import news, users, config; print('OK routers')
-    import main; print('OK main')
-    print('All imports OK')
-except Exception as e:
-    import traceback
-    traceback.print_exc()
+import traceback, sys
+checks = [
+    ('fastapi', 'fastapi'),
+    ('aiosqlite', 'aiosqlite'),
+    ('aiohttp', 'aiohttp'),
+    ('apscheduler', 'apscheduler'),
+    ('feedparser', 'feedparser'),
+    ('database', 'database'),
+    ('news_fetcher', 'news_fetcher'),
+    ('summarizer', 'summarizer'),
+    ('emailer', 'emailer'),
+    ('models', 'models'),
+    ('routers.news', 'routers.news'),
+    ('routers.users', 'routers.users'),
+    ('routers.config', 'routers.config'),
+    ('main app', 'main'),
+]
+ok = True
+for label, mod in checks:
+    try:
+        __import__(mod)
+        print(f'  OK   {label}')
+    except Exception as e:
+        print(f'  FAIL {label}: {e}')
+        traceback.print_exc()
+        ok = False
+if not ok:
     sys.exit(1)
+print('All imports OK')
 " 2>&1
 
+if [ $? -ne 0 ]; then
+    echo "Import check failed — aborting"
+    exit 1
+fi
+
 echo ""
-echo "=== Launching uvicorn ==="
-exec uvicorn main:app --host 0.0.0.0 --port "${PORT:-8000}" 2>&1
+echo "=== Starting server ==="
+exec uvicorn main:app --host 0.0.0.0 --port "${PORT:-8000}"
