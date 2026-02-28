@@ -1,8 +1,5 @@
 from pydantic import BaseModel
 from typing import List, Optional
-from dataclasses import dataclass
-
-# Re-export from database for convenience
 from database import User
 
 class EmailConfig(BaseModel):
@@ -21,3 +18,9 @@ class NewsItem(BaseModel):
     is_product_or_tool: bool
     competitors: Optional[List[dict]]
     competitive_advantage: Optional[str]
+
+class UserCreate(BaseModel):
+    email: str
+    name: str
+    categories: Optional[List[str]] = []
+    min_relevance: int = 5
