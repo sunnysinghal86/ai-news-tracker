@@ -16,7 +16,6 @@ from news_fetcher import RawArticle
 
 logger = logging.getLogger(__name__)
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 
 SYSTEM_PROMPT = (
@@ -110,7 +109,9 @@ async def enrich_all(articles: List[RawArticle]) -> List[RawArticle]:
 # ── Claude API ────────────────────────────────────────────────────────────────
 
 async def _call_claude(prompt: str, session: aiohttp.ClientSession) -> Optional[str]:
-    if not ANTHROPIC_API_KEY:
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")  # read fresh — not cached at import
+    if not api_key:
+        logger.warning("ANTHROPIC_API_KEY not set — skipping Claude call")
         return None
     try:
         payload = {
@@ -120,12 +121,15 @@ async def _call_claude(prompt: str, session: aiohttp.ClientSession) -> Optional[
             "messages": [{"role": "user", "content": prompt}],
         }
         headers = {
-            "x-api-key": ANTHROPIC_API_KEY,
+            "x-api-key": api_key,
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
         }
         async with session.post(ANTHROPIC_API_URL, json=payload, headers=headers) as resp:
             data = await resp.json()
+            if resp.status != 200:
+                logger.error(f"Claude API HTTP {resp.status}: {data.get('error', data)}")
+                return None
             return data.get("content", [{}])[0].get("text", "")
     except Exception as e:
         logger.error(f"Claude API error: {e}")
@@ -195,7 +199,7 @@ Include competitors only when is_product_or_tool is true. Max 3 competitors."""
 # ── Public entry point ────────────────────────────────────────────────────────
 
 async def summarize_articles(articles: List[RawArticle], max_concurrent: int = 5) -> List[ProcessedArticle]:
-    if not ANTHROPIC_API_KEY:
+    if not os.getenv("ANTHROPIC_API_KEY", ""):
         logger.warning("ANTHROPIC_API_KEY not set — skipping AI summaries")
         return [
             ProcessedArticle(

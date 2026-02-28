@@ -61,6 +61,16 @@ def strip_html(text: str) -> str:
     return text[:500]  # cap at 500 chars for storage
 
 
+def fix_encoding(text: str) -> str:
+    """Fix mojibake — UTF-8 bytes misread as latin-1 (common in RSS feeds)."""
+    if not text:
+        return text
+    try:
+        return text.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return text
+
+
 def is_relevant(title: str, content: str = "") -> bool:
     text = (title + " " + content).lower()
     return any(kw.lower() in text for kw in AI_KEYWORDS)
@@ -97,7 +107,7 @@ async def fetch_hackernews(session: aiohttp.ClientSession) -> List[RawArticle]:
                     url=hit.get("url") or f"https://news.ycombinator.com/item?id={hit.get('objectID')}",
                     source="Hacker News",
                     published_at=published,
-                    content=strip_html(hit.get("story_text", "") or ""),
+                    content=fix_encoding(strip_html(hit.get("story_text", "") or "")),
                     author=hit.get("author", ""),
                     tags=["hacker-news"],
                     score=hit.get("points", 0)
@@ -177,7 +187,7 @@ async def fetch_newsapi(session: aiohttp.ClientSession) -> List[RawArticle]:
             data = await resp.json()
         
         for item in data.get("articles", []):
-            title = item.get("title", "") or ""
+            title = fix_encoding(item.get("title", "") or "") or ""
             desc = item.get("description", "") or ""
             if not is_relevant(title, desc):
                 continue
@@ -227,7 +237,7 @@ async def fetch_medium(session: aiohttp.ClientSession) -> List[RawArticle]:
                 data = await resp.json()
             
             for item in data.get("items", []):
-                title = item.get("title", "")
+                title = fix_encoding(item.get("title", "") or "")
                 if not is_relevant(title, item.get("description", "")):
                     continue
                 
@@ -243,7 +253,7 @@ async def fetch_medium(session: aiohttp.ClientSession) -> List[RawArticle]:
                     url=item.get("link", ""),
                     source="Medium",
                     published_at=published,
-                    content=strip_html(item.get("description", "") or ""),
+                    content=fix_encoding(strip_html(item.get("description", "") or "")),
                     author=item.get("author", ""),
                     tags=["medium"],
                     score=0
