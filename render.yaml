@@ -1,9 +1,8 @@
-# render.yaml — Free tier deploy (no disk required)
 services:
   - type: web
     name: ai-signal-backend
     runtime: python
-    #region: oregon
+    region: oregon
     plan: free
     rootDir: backend
     buildCommand: pip install -r requirements.txt
@@ -19,19 +18,16 @@ services:
       - key: FROM_EMAIL
         value: "AI Signal <digest@yourdomain.com>"
       - key: DB_PATH
-        value: /tmp/news_tracker.db        # ephemeral — fine for articles
+        value: /tmp/news_tracker.db
       - key: APP_URL
         value: https://ai-signal-frontend.onrender.com
-      # Seed subscribers from env so they survive redeploys
-      # Format: "Name1:email1@x.com,Name2:email2@x.com"
       - key: SEED_SUBSCRIBERS
         sync: false
 
   - type: web
     name: ai-signal-frontend
     runtime: static
-    #region: oregon
-    plan: free
+    region: oregon
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
