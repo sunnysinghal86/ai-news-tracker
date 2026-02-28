@@ -2,11 +2,11 @@ services:
   - type: web
     name: ai-signal-backend
     runtime: python
-    #region: oregon
+    region: oregon
     plan: free
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    startCommand: bash start.sh
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
@@ -29,7 +29,7 @@ services:
   - type: web
     name: ai-signal-frontend
     runtime: static
-    #region: oregon
+    region: oregon
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
