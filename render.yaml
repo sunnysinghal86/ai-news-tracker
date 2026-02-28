@@ -9,6 +9,8 @@ services:
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: RESEND_API_KEY
@@ -16,7 +18,7 @@ services:
       - key: NEWS_API_KEY
         sync: false
       - key: FROM_EMAIL
-        value: "AI Signal <digest@yourdomain.com>"
+        value: "AI Signal <onboarding@resend.dev>"
       - key: DB_PATH
         value: /tmp/news_tracker.db
       - key: APP_URL
