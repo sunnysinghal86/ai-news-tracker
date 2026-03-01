@@ -137,7 +137,7 @@ function ArticleCard({ article, expanded, onToggle, isLead }) {
   const src  = srcFor(article.source);
   const icon = CAT_ICON[article.category] || "◆";
   const hasSummary = article.summary && article.summary.length > 20;
-  const hasRivals  = article.is_product_or_tool && article.competitors?.length > 0;
+  const hasRivals  = article.is_product_or_tool || article.competitors?.length > 0;
 
   return (
     <article
@@ -195,7 +195,11 @@ function ArticleCard({ article, expanded, onToggle, isLead }) {
               letterSpacing: "0.12em", textTransform: "uppercase",
               borderBottom: `1px solid ${expanded ? T.red : T.rule}`,
             }}>
-            {expanded ? "▲ RIVALS" : "⚔ RIVALS"}
+            {expanded
+              ? "▲ RIVALS"
+              : article.competitors?.length > 0
+                ? "⚔ RIVALS"
+                : "⚔ RIVAL ANALYSIS"}
           </button>
         )}
 
@@ -229,11 +233,32 @@ function ArticleCard({ article, expanded, onToggle, isLead }) {
 
       {/* Collapsible competitor analysis */}
       {expanded && hasRivals && (
-        <CompetitorBlock
-          competitors={article.competitors}
-          advantage={article.competitive_advantage}
-          productName={article.product_name}
-        />
+        <div onClick={e => e.stopPropagation()}>
+          {article.competitors?.length > 0
+            ? <CompetitorBlock
+                competitors={article.competitors}
+                advantage={article.competitive_advantage}
+                productName={article.product_name}
+              />
+            : <div style={{
+                marginTop: "14px", padding: "12px 14px",
+                background: T.paperDk, borderLeft: `3px solid ${T.rule}`,
+                fontSize: "12px", color: T.muted,
+                fontFamily: "Georgia, serif", fontStyle: "italic",
+                lineHeight: 1.6,
+              }}>
+                <strong style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.1em", textTransform: "uppercase", fontSize: "10px", fontStyle: "normal" }}>
+                  {article.product_name || article.title} —
+                </strong>
+                {" "}Competitor data will appear after the next scheduled refresh when Claude analyses this as a product or tool.
+                {article.competitive_advantage && (
+                  <div style={{ marginTop: "8px", color: T.green }}>
+                    <strong>Advantage: </strong>{article.competitive_advantage}
+                  </div>
+                )}
+              </div>
+          }
+        </div>
       )}
     </article>
   );
@@ -420,7 +445,7 @@ export default function App() {
                 style={{ flex: "1 1 180px", padding: "7px 0", border: "none", borderBottom: `2px solid ${T.ink}`, background: "transparent", color: T.ink, fontSize: "13px", outline: "none", fontFamily: "Georgia, serif" }} />
               {[
                 { k: "category", opts: ["Product/Tool","AI Model","Research Paper","Industry News","Tutorial/Guide","Platform/Infrastructure"], ph: "All sections" },
-                { k: "source",   opts: ["Hacker News","arXiv","Medium","NewsAPI"], ph: "All sources" },
+                { k: "source",   opts: ["Hacker News","arXiv","Medium","NewsAPI","platformengineering.org","Platform Weekly"], ph: "All sources" },
               ].map(({ k, opts, ph }) => (
                 <select key={k} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))}
                   style={{ padding: "7px 4px", border: "none", borderBottom: `2px solid ${filters[k] ? T.ink : T.rule}`, background: "transparent", color: filters[k] ? T.ink : T.muted, fontSize: "12px", cursor: "pointer", outline: "none", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.06em" }}>
@@ -490,7 +515,7 @@ export default function App() {
                     {/* Legend box */}
                     <div style={{ marginTop: "24px", padding: "16px", background: T.paperDk, border: `1px solid ${T.rule}` }}>
                       <p style={{ margin: "0 0 10px", fontSize: "9.5px", fontWeight: 700, color: T.muted, letterSpacing: "0.15em", textTransform: "uppercase", fontFamily: "'Barlow Condensed', sans-serif" }}>Sources</p>
-                      {Object.entries(SRC_STYLE).map(([name, { bg }]) => (
+                      {Object.entries(SRC_STYLE).filter(([name]) => !["platformengineering.org","Platform Weekly"].includes(name) || true).map(([name, { bg }]) => (
                         <div key={name} style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "7px" }}>
                           <span style={{ width: "10px", height: "10px", background: bg, display: "inline-block", flexShrink: 0 }} />
                           <span style={{ fontSize: "11px", color: T.muted, fontFamily: "'Barlow Condensed', sans-serif" }}>{name}</span>
