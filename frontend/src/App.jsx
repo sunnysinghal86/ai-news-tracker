@@ -61,10 +61,12 @@ const CAT_ICON = {
   "Industry News": "◆", "Tutorial/Guide": "▶", "Platform/Infrastructure": "▣",
 };
 const SRC_STYLE = {
-  "Hacker News": { bg: "#c0392b", label: "HN" },
-  "arXiv":       { bg: "#1a3a5c", label: "arXiv" },
-  "Medium":      { bg: "#1a1208", label: "Medium" },
-  "NewsAPI":     { bg: "#b5860d", label: "News" },
+  "Hacker News":             { bg: "#c0392b", label: "HN" },
+  "arXiv":                   { bg: "#1a3a5c", label: "arXiv" },
+  "Medium":                  { bg: "#1a1208", label: "Medium" },
+  "NewsAPI":                 { bg: "#b5860d", label: "News" },
+  "platformengineering.org": { bg: "#1c4d35", label: "PE.org" },
+  "Platform Weekly":         { bg: "#1c4d35", label: "PW" },
 };
 function srcFor(s) {
   const k = Object.keys(SRC_STYLE).find(k => s?.includes(k)) || "NewsAPI";
@@ -131,68 +133,107 @@ function CompetitorBlock({ competitors, advantage, productName }) {
 }
 
 function ArticleCard({ article, expanded, onToggle, isLead }) {
+  const [showSummary, setShowSummary] = useState(false);
   const src  = srcFor(article.source);
   const icon = CAT_ICON[article.category] || "◆";
+  const hasSummary = article.summary && article.summary.length > 20;
+  const hasRivals  = article.is_product_or_tool && article.competitors?.length > 0;
+
   return (
     <article
-      onClick={onToggle}
-      style={{ cursor: "pointer", paddingBottom: "18px", marginBottom: "18px", borderBottom: `1px solid ${T.rule}` }}
-      onMouseEnter={e => e.currentTarget.style.opacity = "0.85"}
-      onMouseLeave={e => e.currentTarget.style.opacity = "1"}
+      style={{ paddingBottom: "18px", marginBottom: "18px", borderBottom: `1px solid ${T.rule}` }}
     >
+      {/* Source / category / badges row */}
       <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "7px", flexWrap: "wrap" }}>
         <Stamp bg={src.bg}>{src.label}</Stamp>
         <span style={{ fontSize: "9.5px", color: T.muted, textTransform: "uppercase", letterSpacing: "0.12em", fontFamily: "'Barlow Condensed', sans-serif" }}>
           {icon} {article.category}
         </span>
-        {article.is_product_or_tool && (
-          <span style={{ fontSize: "9.5px", color: T.red, textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'Barlow Condensed', sans-serif", borderBottom: `1px solid ${T.red}` }}>
-            ⚔ Rivals
-          </span>
-        )}
         <span style={{ marginLeft: "auto" }}><Stars score={article.relevance_score} /></span>
       </div>
 
+      {/* Headline */}
       <h2 style={{
-        margin: "0 0 9px",
+        margin: "0 0 10px",
         fontFamily: "'Playfair Display', Georgia, serif",
         fontSize: isLead ? "clamp(20px,3.5vw,28px)" : "16px",
         fontWeight: 700, lineHeight: 1.28,
         color: T.ink, letterSpacing: "-0.2px",
       }}>
         <a href={article.url} target="_blank" rel="noopener noreferrer"
-          onClick={e => e.stopPropagation()}
-          style={{ color: "inherit", textDecoration: "none" }}>
+          style={{ color: "inherit", textDecoration: "none" }}
+          onMouseEnter={e => e.currentTarget.style.borderBottom = `2px solid ${T.ink}`}
+          onMouseLeave={e => e.currentTarget.style.borderBottom = "2px solid transparent"}>
           {article.title}
         </a>
       </h2>
 
-      {article.summary && (
-        <p style={{ margin: "0 0 10px", fontSize: isLead ? "14px" : "12.5px", color: T.muted, lineHeight: 1.7, fontFamily: "'Source Serif 4', Georgia, serif" }}>
-          {article.summary}
-        </p>
-      )}
-
-      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
-        {(article.tags || []).slice(0, 4).map(t => (
-          <span key={t} style={{ fontSize: "10px", color: T.faint, fontFamily: "'Barlow Condensed', sans-serif" }}>#{t}</span>
-        ))}
-        {article.author && (
-          <span style={{ marginLeft: "auto", fontSize: "10px", color: T.faint, fontStyle: "italic" }}>
-            {article.author.slice(0, 32)}{article.author.length > 32 ? "…" : ""}
-          </span>
+      {/* Inline action links — Summary + Rivals */}
+      <div style={{ display: "flex", gap: "14px", alignItems: "center", marginBottom: "8px", flexWrap: "wrap" }}>
+        {hasSummary && (
+          <button
+            onClick={() => setShowSummary(s => !s)}
+            style={{
+              background: "none", border: "none", padding: 0, cursor: "pointer",
+              fontSize: "10px", fontWeight: 700,
+              color: showSummary ? T.ink : T.muted,
+              fontFamily: "'Barlow Condensed', sans-serif",
+              letterSpacing: "0.12em", textTransform: "uppercase",
+              borderBottom: `1px solid ${showSummary ? T.ink : T.rule}`,
+            }}>
+            {showSummary ? "▲ SUMMARY" : "▼ SUMMARY"}
+          </button>
         )}
-      </div>
+        {hasRivals && (
+          <button
+            onClick={onToggle}
+            style={{
+              background: "none", border: "none", padding: 0, cursor: "pointer",
+              fontSize: "10px", fontWeight: 700,
+              color: expanded ? T.red : T.muted,
+              fontFamily: "'Barlow Condensed', sans-serif",
+              letterSpacing: "0.12em", textTransform: "uppercase",
+              borderBottom: `1px solid ${expanded ? T.red : T.rule}`,
+            }}>
+            {expanded ? "▲ RIVALS" : "⚔ RIVALS"}
+          </button>
+        )}
 
-      {expanded && (
-        <div onClick={e => e.stopPropagation()}>
-          <CompetitorBlock competitors={article.competitors} advantage={article.competitive_advantage} productName={article.product_name} />
-          {!article.is_product_or_tool && (
-            <div style={{ marginTop: "14px", padding: "12px 14px", background: T.paperDk, fontSize: "12px", color: T.muted, fontStyle: "italic", fontFamily: "Georgia, serif" }}>
-              This is a {article.category?.toLowerCase()} — competitor analysis is generated for products, tools and models only.
-            </div>
+        {/* Tags + author on the right */}
+        <div style={{ marginLeft: "auto", display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+          {(article.tags || []).slice(0, 3).map(t => (
+            <span key={t} style={{ fontSize: "10px", color: T.faint, fontFamily: "'Barlow Condensed', sans-serif" }}>#{t}</span>
+          ))}
+          {article.author && (
+            <span style={{ fontSize: "10px", color: T.faint, fontStyle: "italic" }}>
+              {article.author.slice(0, 28)}{article.author.length > 28 ? "…" : ""}
+            </span>
           )}
         </div>
+      </div>
+
+      {/* Collapsible summary */}
+      {showSummary && hasSummary && (
+        <div style={{
+          margin: "0 0 10px",
+          padding: "12px 14px",
+          background: T.paperDk,
+          borderLeft: `3px solid ${T.gold}`,
+          fontSize: isLead ? "14px" : "12.5px",
+          color: T.muted, lineHeight: 1.7,
+          fontFamily: "'Source Serif 4', Georgia, serif",
+        }}>
+          {article.summary}
+        </div>
+      )}
+
+      {/* Collapsible competitor analysis */}
+      {expanded && hasRivals && (
+        <CompetitorBlock
+          competitors={article.competitors}
+          advantage={article.competitive_advantage}
+          productName={article.product_name}
+        />
       )}
     </article>
   );
