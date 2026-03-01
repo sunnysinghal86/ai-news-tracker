@@ -16,30 +16,28 @@ async def get_config():
         "refresh_interval_hours": 1,
         "digest_time_utc":        "08:00",
         "max_users":              20,
-        "sources":                ["Hacker News", "arXiv", "Medium", "NewsAPI"],
+        "sources": [
+            "Hacker News", "arXiv", "Medium", "NewsAPI",
+            "platformengineering.org", "Platform Weekly"
+        ],
     }
 
 
 @router.get("/debug-claude")
 async def debug_claude():
-    """
-    Test the Claude API connection live.
-    Visit /api/config/debug-claude to diagnose summarisation issues.
-    """
+    """Test Claude API connection live."""
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
-
     if not api_key:
         return {
             "status": "error",
-            "reason": "ANTHROPIC_API_KEY is not set in environment variables",
-            "fix": "Go to Render dashboard → your backend service → Environment → add ANTHROPIC_API_KEY"
+            "reason": "ANTHROPIC_API_KEY not set",
+            "fix": "Render dashboard → Environment → add ANTHROPIC_API_KEY"
         }
-
     try:
         payload = {
             "model": "claude-haiku-4-5-20251001",
-            "max_tokens": 100,
-            "messages": [{"role": "user", "content": "Reply with exactly: {\"ok\": true}"}],
+            "max_tokens": 50,
+            "messages": [{"role": "user", "content": 'Reply with exactly: {"ok": true}'}],
         }
         headers = {
             "x-api-key": api_key,
@@ -53,26 +51,16 @@ async def debug_claude():
                 timeout=aiohttp.ClientTimeout(total=15)
             ) as resp:
                 data = await resp.json()
-
         if resp.status == 200:
-            text = data.get("content", [{}])[0].get("text", "")
             return {
                 "status": "ok",
-                "claude_responded": True,
-                "response_preview": text[:100],
+                "response": data.get("content", [{}])[0].get("text", ""),
                 "key_prefix": api_key[:12] + "...",
             }
-        else:
-            return {
-                "status": "error",
-                "http_status": resp.status,
-                "anthropic_error": data.get("error", data),
-                "key_prefix": api_key[:12] + "...",
-            }
-
-    except Exception as e:
         return {
             "status": "error",
-            "exception": str(e),
-            "key_prefix": api_key[:12] + "..." if api_key else "not set",
+            "http_status": resp.status,
+            "error": data.get("error", data),
         }
+    except Exception as e:
+        return {"status": "error", "exception": str(e)}
