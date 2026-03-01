@@ -137,26 +137,27 @@ async def _call_claude(prompt: str, session: aiohttp.ClientSession) -> Optional[
 
 
 async def _analyse_article(article: RawArticle, session: aiohttp.ClientSession) -> ProcessedArticle:
-    prompt = f"""Analyse this AI/tech article and return ONLY valid JSON:
-
-Title: {article.title}
-Source: {article.source}
-Content: {(article.content or '')[:600]}
-
-Return exactly this structure:
-{{
-  "summary": "2-3 sentence summary for software/platform engineers",
-  "category": "Product/Tool | AI Model | Research Paper | Industry News | Tutorial/Guide | Platform/Infrastructure",
-  "tags": ["tag1", "tag2", "tag3"],
-  "relevance_score": <integer 1-10 for platform/software engineering relevance>,
-  "is_product_or_tool": <true or false>,
-  "product_name": "<product name or empty string>",
-  "competitors": [
-    {{"name": "Name", "description": "what they do", "comparison": "how this differs"}}
-  ],
-  "competitive_advantage": "<key differentiator or empty string>"
-}}
-Include competitors only when is_product_or_tool is true. Max 3 competitors."""
+    prompt = (
+        "Analyse this AI/tech article and return ONLY valid JSON. No markdown, no explanation.\n\n"
+        f"Title: {article.title}\n"
+        f"Source: {article.source}\n"
+        f"Content: {(article.content or '')[:600]}\n\n"
+        "Rules:\n"
+        "- is_product_or_tool = true for ANY tool, library, framework, platform, model, API, or service\n"
+        "- If is_product_or_tool is true, include 2-3 REAL named competitors with specific comparisons\n"
+        "- relevance_score: 8-10 for platform eng/MLOps/AI infra, 5-7 general AI news, 1-4 unrelated\n\n"
+        "Return exactly this JSON:\n"
+        "{\n"
+        '"  \"summary\": \"2-3 sentences for software/platform engineers, be specific\",\n"' 
+        '"  \"category\": \"Product/Tool | AI Model | Research Paper | Industry News | Tutorial/Guide | Platform/Infrastructure\",\n"'
+        '"  \"tags\": [\"tag1\", \"tag2\", \"tag3\"],\n"'
+        '"  \"relevance_score\": <integer 1-10>,\n"'
+        '"  \"is_product_or_tool\": <true or false>,\n"'
+        '"  \"product_name\": \"<product name or empty string>\",\n"'
+        '"  \"competitors\": [{{\"name\": \"Real Name\", \"description\": \"what they do\", \"comparison\": \"how this differs\"}}],\n"'
+        '"  \"competitive_advantage\": \"<key differentiator or empty string>\"\n"'
+        "}"
+    )
 
     base = ProcessedArticle(
         id=article.id,
