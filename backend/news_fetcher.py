@@ -265,6 +265,70 @@ async def fetch_medium(session: aiohttp.ClientSession) -> List[RawArticle]:
     return articles
 
 
+
+
+# ─────────────────────────────────────────────
+# PLATFORM ENGINEERING SOURCES
+# ─────────────────────────────────────────────
+PLATFORM_RSS_FEEDS = [
+    # platformengineering.org - official community RSS
+    ("https://platformengineering.org/blog/rss.xml", "platformengineering.org"),
+    # Platform Weekly newsletter RSS (Substack)
+    ("https://platformweekly.com/feed", "Platform Weekly"),
+    # Backup: Substack platform engineering newsletters
+    ("https://newsletter.platformengineering.org/feed", "Platform Weekly"),
+]
+
+async def fetch_platform_sources(session: aiohttp.ClientSession) -> List[RawArticle]:
+    """Fetch from platformengineering.org and Platform Weekly RSS"""
+    articles = []
+    for feed_url, source_name in PLATFORM_RSS_FEEDS:
+        try:
+            async with session.get(
+                feed_url,
+                timeout=aiohttp.ClientTimeout(total=10),
+                headers={"User-Agent": "Mozilla/5.0 (compatible; AISignalBot/1.0)"}
+            ) as resp:
+                if resp.status != 200:
+                    logger.warning(f"{source_name} returned HTTP {resp.status}")
+                    continue
+                text = await resp.text()
+
+            feed = feedparser.parse(text)
+            if not feed.entries:
+                logger.warning(f"{source_name}: no entries in feed")
+                continue
+
+            for entry in feed.entries:
+                title = fix_encoding(entry.get("title", "").replace("\n", " "))
+                summary = fix_encoding(strip_html(
+                    entry.get("summary", "") or entry.get("description", "")
+                ))
+
+                # Platform engineering sources are always relevant — no keyword filter
+                try:
+                    published = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
+                except Exception:
+                    published = datetime.now(timezone.utc)
+
+                url = entry.get("link", "")
+                articles.append(RawArticle(
+                    id=gen_id(url),
+                    title=title,
+                    url=url,
+                    source=source_name,
+                    published_at=published,
+                    content=summary[:500],
+                    author=entry.get("author", ""),
+                    tags=["platform-engineering"],
+                    score=0
+                ))
+            logger.info(f"{source_name}: {len(feed.entries)} articles")
+        except Exception as e:
+            logger.warning(f"{source_name} fetch error: {e}")
+
+    return articles
+
 # ─────────────────────────────────────────────
 # MAIN AGGREGATOR
 # ─────────────────────────────────────────────
@@ -279,6 +343,7 @@ async def fetch_all_news() -> List[RawArticle]:
             fetch_arxiv(session),
             fetch_newsapi(session),
             fetch_medium(session),
+            fetch_platform_sources(session),
             return_exceptions=True
         )
     
