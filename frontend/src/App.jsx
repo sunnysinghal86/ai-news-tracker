@@ -477,7 +477,7 @@ export default function App() {
                   {[
                     { label: "Articles Indexed",  val: stats?.total_articles || 0 },
                     { label: "Products & Tools",   val: stats?.product_articles || 0 },
-                    { label: "Sources Active",     val: 4 },
+                    { label: "Sources Active",     val: Object.keys(SRC_STYLE).length },
                     { label: "Subscribers",        val: usersData?.users?.length || 0 },
                   ].map(({ label, val }) => (
                     <div key={label} style={{ padding: "18px 0 16px", borderRight: `1px solid ${T.rule}`, textAlign: "center" }}>
