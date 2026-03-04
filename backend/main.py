@@ -94,8 +94,11 @@ async def send_digest_job():
             active_users = await db.get_active_users()
             top_articles = await db.get_top_articles(limit=10)
         for user in active_users:
-            await send_daily_digest(user, top_articles)
-            logger.info(f"Digest sent to {user.email}")
+            success = await send_daily_digest(user, top_articles)
+            if success:
+                logger.info(f"Digest sent to {user.email}")
+            else:
+                logger.error(f"Digest FAILED for {user.email} — check RESEND_API_KEY and FROM_EMAIL")
     except Exception as e:
         logger.error(f"Digest failed: {e}", exc_info=True)
 
