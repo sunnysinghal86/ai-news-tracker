@@ -27,7 +27,7 @@ scheduler = AsyncIOScheduler()
 async def lifespan(app: FastAPI):
     await init_db()
 
-    scheduler.add_job(refresh_news_job, "interval", hours=4,  # every 4h — news doesn't change that fast
+    scheduler.add_job(refresh_news_job, "interval", hours=12,  # every 12h — ~$1.70/month
                       id="refresh_news", replace_existing=True)
     scheduler.add_job(send_digest_job, "cron", hour=8, minute=0,
                       id="daily_digest", replace_existing=True)
@@ -93,12 +93,16 @@ async def send_digest_job():
         async with get_db() as db:
             active_users = await db.get_active_users()
             top_articles = await db.get_top_articles(limit=10)
-        for user in active_users:
+        # Send all digests concurrently — scales to 100+ users without slowing down
+        async def send_one(user):
             success = await send_daily_digest(user, top_articles)
             if success:
                 logger.info(f"Digest sent to {user.email}")
             else:
                 logger.error(f"Digest FAILED for {user.email} — check RESEND_API_KEY and FROM_EMAIL")
+
+        await asyncio.gather(*[send_one(u) for u in active_users])
+        logger.info(f"Digest complete — {len(active_users)} users")
     except Exception as e:
         logger.error(f"Digest failed: {e}", exc_info=True)
 
