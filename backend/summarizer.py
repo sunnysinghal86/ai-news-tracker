@@ -96,7 +96,7 @@ async def enrich_all(articles: List[RawArticle]) -> List[RawArticle]:
 
     async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
         results = await asyncio.gather(
-            *[bounded(a, session) for a in articles],
+            *[bounded(a, session, idx=i) for i, a in enumerate(articles)],
             return_exceptions=True,
         )
 
@@ -108,32 +108,49 @@ async def enrich_all(articles: List[RawArticle]) -> List[RawArticle]:
 
 # ── Claude API ────────────────────────────────────────────────────────────────
 
-async def _call_claude(prompt: str, session: aiohttp.ClientSession) -> Optional[str]:
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")  # read fresh — not cached at import
+async def _call_claude(prompt: str, session: aiohttp.ClientSession, retries: int = 4) -> Optional[str]:
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
     if not api_key:
         logger.warning("ANTHROPIC_API_KEY not set — skipping Claude call")
         return None
-    try:
-        payload = {
-            "model": "claude-haiku-4-5-20251001",
-            "max_tokens": 600,
-            "system": SYSTEM_PROMPT,
-            "messages": [{"role": "user", "content": prompt}],
-        }
-        headers = {
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        }
-        async with session.post(ANTHROPIC_API_URL, json=payload, headers=headers) as resp:
-            data = await resp.json()
-            if resp.status != 200:
+
+    payload = {
+        "model": "claude-haiku-4-5-20251001",
+        "max_tokens": 300,  # 300 × 16/min = 5000 tokens/min — well under 10k limit
+        "system": SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+
+    for attempt in range(retries):
+        try:
+            async with session.post(ANTHROPIC_API_URL, json=payload, headers=headers) as resp:
+                data = await resp.json()
+
+                if resp.status == 200:
+                    return data.get("content", [{}])[0].get("text", "")
+
+                if resp.status == 429:
+                    # Rate limited — exponential backoff: 15s, 30s, 60s, 120s
+                    wait = 15 * (2 ** attempt)
+                    logger.warning(f"Rate limited (429) — waiting {wait}s before retry {attempt+1}/{retries}")
+                    await asyncio.sleep(wait)
+                    continue
+
                 logger.error(f"Claude API HTTP {resp.status}: {data.get('error', data)}")
                 return None
-            return data.get("content", [{}])[0].get("text", "")
-    except Exception as e:
-        logger.error(f"Claude API error: {e}")
-        return None
+
+        except Exception as e:
+            logger.error(f"Claude API error (attempt {attempt+1}): {e}")
+            if attempt < retries - 1:
+                await asyncio.sleep(5)
+
+    logger.error("Claude API failed after all retries")
+    return None
 
 
 async def _analyse_article(article: RawArticle, session: aiohttp.ClientSession) -> ProcessedArticle:
@@ -199,7 +216,7 @@ async def _analyse_article(article: RawArticle, session: aiohttp.ClientSession) 
 
 # ── Public entry point ────────────────────────────────────────────────────────
 
-async def summarize_articles(articles: List[RawArticle], max_concurrent: int = 5) -> List[ProcessedArticle]:
+async def summarize_articles(articles: List[RawArticle], max_concurrent: int = 1) -> List[ProcessedArticle]:
     if not os.getenv("ANTHROPIC_API_KEY", ""):
         logger.warning("ANTHROPIC_API_KEY not set — skipping AI summaries")
         return [
@@ -221,16 +238,24 @@ async def summarize_articles(articles: List[RawArticle], max_concurrent: int = 5
             for a in articles
         ]
 
-    sem = asyncio.Semaphore(max_concurrent)
-    timeout = aiohttp.ClientTimeout(total=30)
+    # Cap at 30 articles per refresh to stay within token/min rate limits
+    if len(articles) > 30:
+        logger.info(f"Capping articles from {len(articles)} to 30 to avoid rate limits")
+        articles = articles[:30]
 
-    async def bounded(art: RawArticle, session: aiohttp.ClientSession) -> ProcessedArticle:
+    sem = asyncio.Semaphore(max_concurrent)
+    timeout = aiohttp.ClientTimeout(total=300)  # 5 min total — enough for 30 articles with backoff
+
+    async def bounded(art: RawArticle, session: aiohttp.ClientSession, idx: int = 0) -> ProcessedArticle:
         async with sem:
+            # Fixed 4s gap between calls: 300 tokens × 15/min = 4,500 tokens/min (under 10k limit)
+            if idx > 0:
+                await asyncio.sleep(4)
             return await _analyse_article(art, session)
 
     async with aiohttp.ClientSession(timeout=timeout) as session:
         results = await asyncio.gather(
-            *[bounded(a, session) for a in articles],
+            *[bounded(a, session, idx=i) for i, a in enumerate(articles)],
             return_exceptions=True,
         )
 
