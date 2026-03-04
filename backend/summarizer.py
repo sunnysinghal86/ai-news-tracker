@@ -10,6 +10,7 @@ import json
 import logging
 from typing import List, Optional
 from dataclasses import dataclass
+import trafilatura
 
 # RawArticle is defined in news_fetcher — import it to fix the NameError crash
 from news_fetcher import RawArticle
@@ -46,17 +47,28 @@ class ProcessedArticle:
 # ── Content enrichment ────────────────────────────────────────────────────────
 
 async def _enrich_one(article: RawArticle, session: aiohttp.ClientSession) -> RawArticle:
-    """Fetch og:description from the article URL when we have no body text."""
-    if article.content and len(article.content) > 80:
-        return article
+    """
+    Extract full article body using trafilatura.
+    Falls back to og:description if trafilatura gets nothing.
+    """
+    if article.content and len(article.content) > 200:
+        return article  # already has good content
+
     if not article.url or "news.ycombinator.com" in article.url:
         return article
 
+    # Skip known paywalled domains
+    paywalled = ["wsj.com", "ft.com", "bloomberg.com", "nytimes.com", "economist.com"]
+    if any(d in article.url for d in paywalled):
+        return article
+
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; AISignalBot/1.0)"}
+        headers = {
+            "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+        }
         async with session.get(
             article.url, headers=headers,
-            timeout=aiohttp.ClientTimeout(total=8),
+            timeout=aiohttp.ClientTimeout(total=10),
             allow_redirects=True,
         ) as resp:
             if resp.status != 200:
@@ -65,21 +77,35 @@ async def _enrich_one(article: RawArticle, session: aiohttp.ClientSession) -> Ra
                 return article
             html = await resp.text(errors="ignore")
 
+        # Attempt 1: trafilatura full body extraction
+        extracted = trafilatura.extract(
+            html,
+            include_comments=False,
+            include_tables=False,
+            no_fallback=False,
+            favor_precision=True,
+        )
+        if extracted and len(extracted.strip()) > 150:
+            article.content = extracted.strip()[:1500]
+            logger.debug(f"trafilatura: {len(article.content)} chars for {article.title[:50]}")
+            return article
+
+        # Attempt 2: og:description / meta description fallback
+        import re as _re
         patterns = [
-            r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\'](.*?)["\']',
-            r'<meta[^>]+content=["\'](.*?)["\'][^>]+property=["\']og:description["\']',
-            r'<meta[^>]+name=["\']description["\'][^>]+content=["\'](.*?)["\']',
-            r'<meta[^>]+content=["\'](.*?)["\'][^>]+name=["\']description["\']',
+            r'<meta[^>]+property=[\x27"]{1,2}og:description[\x27"]{1,2}[^>]+content=[\x27"]{1,2}(.*?)[\x27"]{1,2}',
+            r'<meta[^>]+name=[\x27"]{1,2}description[\x27"]{1,2}[^>]+content=[\x27"]{1,2}(.*?)[\x27"]{1,2}',
         ]
         for pat in patterns:
-            m = re.search(pat, html, re.IGNORECASE | re.DOTALL)
+            m = _re.search(pat, html, _re.IGNORECASE | _re.DOTALL)
             if m:
-                desc = m.group(1).strip()[:500]
+                desc = m.group(1).strip()[:600]
                 if len(desc) > 40:
                     article.content = desc
                     return article
-    except Exception:
-        pass  # best-effort — silently skip
+
+    except Exception as e:
+        logger.debug(f"Enrichment failed for {article.url[:60]}: {e}")
 
     return article
 
