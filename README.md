@@ -48,7 +48,7 @@ It's not a newsletter you subscribed to and forgot. It's infrastructure you own.
 | **Competitor Analysis** | For every product/tool/model: lists rivals + *how this one differs* |
 | **Relevance Scoring** | 1–10 score weighted toward Software Dev & Platform Engineering |
 | **Auto Categorisation** | Product/Tool · AI Model · Research · News · Tutorial · Platform/Infra |
-| **Smart Refresh** | Fetches every 4 hours — only NEW articles sent to Claude (already-summarised ones skipped) |
+| **Smart Refresh** | Fetches every 12 hours — only NEW articles sent to Claude (already-summarised ones skipped) |
 | **Keep-Alive Cron** | cron-job.org pings `/health` every 10 minutes to prevent Render spin-down |
 | **Daily Digest Email** | One HTML email per day at 08:00 UTC via Resend |
 | **Editorial Dashboard** | Newspaper-style React UI — collapsible summaries, rival analysis, filters |
@@ -146,9 +146,9 @@ SECURITY BOUNDARIES
   • Render provides TLS termination — no self-managed certs needed
   • Email delivery via Resend (SPF/DKIM handled by Resend)
 
-DATA FLOW SEQUENCE (every 4 hours)
+DATA FLOW SEQUENCE (every 12 hours)
 ════════════════════════════════
-  1. APScheduler triggers fetch_all_news() every 4 hours
+  1. APScheduler triggers fetch_all_news() every 12 hours (2×/day)
   2. 6 async tasks launched concurrently (HN + arXiv + NewsAPI + Medium + PE.org + PW)
   3. Raw articles deduplicated by URL hash
   4. Already-summarised articles filtered out — zero Claude cost for known articles
@@ -241,8 +241,8 @@ The `/health` endpoint returns `{"status": "healthy"}` and costs nothing to call
 | platformengineering.org RSS | Unlimited | — | **$0** |
 | Platform Weekly RSS | Unlimited | — | **$0** |
 | cron-job.org | Free | 4,320 pings/month | **$0** |
-| Claude Haiku | $0.80/1M input, $4.00/1M output | ~20 new articles/day × ~830 tokens | **~$1.50–3/month** |
-| **TOTAL** | | | **~$1.50–3/month** |
+| Claude Haiku | $0.80/1M input, $4.00/1M output | ~20 new articles/refresh × 2 refreshes/day | **~$1.70/month** |
+| **TOTAL** | | | **~$1.70/month** |
 
 ---
 
@@ -280,7 +280,7 @@ AI_KEYWORDS = ["your-technology", "your-company", ...]
 
 **Change refresh cadence** (`main.py`):
 ```python
-scheduler.add_job(refresh_news_job, "interval", hours=4)   # default — balances freshness vs cost
+scheduler.add_job(refresh_news_job, "interval", hours=12)  # default — 2×/day, ~$1.70/month
 scheduler.add_job(send_digest_job, "cron", hour=7, minute=30)  # digest at 7:30am UTC
 ```
 
