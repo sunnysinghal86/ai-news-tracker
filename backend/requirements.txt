@@ -7,3 +7,4 @@ apscheduler==3.10.4
 pydantic==2.8.2
 python-dotenv==1.0.1
 trafilatura==1.12.2
+lxml_html_clean
