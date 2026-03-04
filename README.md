@@ -44,7 +44,7 @@ It's not a newsletter you subscribed to and forgot. It's infrastructure you own.
 | Feature | Details |
 |---|---|
 | **6 Sources** | Hacker News, arXiv, NewsAPI, Medium, platformengineering.org, Platform Weekly |
-| **Claude Haiku Summaries** | 2–3 sentence digest per article, focused on engineering implications |
+| **Claude Haiku Summaries** | 2–3 sentence digest per article — powered by full article body extraction via trafilatura |
 | **Competitor Analysis** | For every product/tool/model: lists rivals + *how this one differs* |
 | **Relevance Scoring** | 1–10 score weighted toward Software Dev & Platform Engineering |
 | **Auto Categorisation** | Product/Tool · AI Model · Research · News · Tutorial · Platform/Infra |
@@ -152,8 +152,8 @@ DATA FLOW SEQUENCE (every 4 hours)
   2. 6 async tasks launched concurrently (HN + arXiv + NewsAPI + Medium + PE.org + PW)
   3. Raw articles deduplicated by URL hash
   4. Already-summarised articles filtered out — zero Claude cost for known articles
-  5. Content enrichment: og:description fetched for NEW articles only
-  6. New articles (typically 10–20 per refresh) sent to Claude Haiku in batches of 2
+  5. Content enrichment: trafilatura extracts full article body for NEW articles (falls back to og:description for paywalled sites)
+  6. New articles (typically 10–20 per refresh) sent to Claude Haiku with up to 1,200 chars of real content
   7. Results upserted to SQLite (ON CONFLICT — no duplicates)
   8. At 08:00 UTC: top articles pulled, HTML email built per subscriber
   9. Resend API delivers personalised digest to each inbox
@@ -293,11 +293,12 @@ scheduler.add_job(send_digest_job, "cron", hour=7, minute=30)  # digest at 7:30a
 ## Tech Stack
 
 ```
-Backend          Python 3.12 · FastAPI · APScheduler · aiosqlite · aiohttp
+Backend          Python 3.12 · FastAPI · APScheduler · aiosqlite · aiohttp · trafilatura
 AI               Anthropic Claude Haiku (claude-haiku-4-5-20251001)
 Email            Resend API (free tier: 3,000/month)
 Database         SQLite on /tmp — ephemeral, zero ops
 News Sources     HN Algolia · arXiv · NewsAPI · Medium RSS · platformengineering.org · Platform Weekly
+Article Extract  trafilatura (full body) → og:description fallback → raw RSS snippet
 Frontend         React 18 · Vite · Custom editorial CSS (no component library)
 Typography       Playfair Display · Source Serif 4 · Barlow Condensed
 Hosting          Render.com — backend (free web service) + frontend (free static site)
