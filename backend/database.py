@@ -98,6 +98,15 @@ class Database:
         """)
         await self._db.commit()
 
+
+    async def get_summarised_ids(self) -> set:
+        """Return IDs of articles that already have a Claude-generated summary."""
+        async with self._db.execute(
+            "SELECT id FROM articles WHERE summary IS NOT NULL AND summary != '' AND LENGTH(summary) > 40"
+        ) as cur:
+            rows = await cur.fetchall()
+        return {r["id"] for r in rows}
+
     async def upsert_articles(self, articles: list):
         now = datetime.now(timezone.utc).isoformat()
         for a in articles:

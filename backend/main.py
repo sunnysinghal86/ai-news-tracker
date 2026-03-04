@@ -27,7 +27,7 @@ scheduler = AsyncIOScheduler()
 async def lifespan(app: FastAPI):
     await init_db()
 
-    scheduler.add_job(refresh_news_job, "interval", hours=1,
+    scheduler.add_job(refresh_news_job, "interval", hours=4,  # every 4h — news doesn't change that fast
                       id="refresh_news", replace_existing=True)
     scheduler.add_job(send_digest_job, "cron", hour=8, minute=0,
                       id="daily_digest", replace_existing=True)
