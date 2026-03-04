@@ -175,10 +175,11 @@ class Database:
             rows = await cur.fetchall()
         return [self._to_dict(r) for r in rows]
 
-    async def get_top_articles(self, limit=10, min_relevance=5) -> List[dict]:
+    async def get_top_articles(self, limit=10, min_relevance=4) -> List[dict]:
+        """Get top articles for digest — ordered by relevance then recency."""
         async with self._db.execute(
             "SELECT * FROM articles WHERE relevance_score >= ? "
-            "ORDER BY relevance_score DESC, score DESC LIMIT ?",
+            "ORDER BY relevance_score DESC, fetched_at DESC LIMIT ?",
             (min_relevance, limit),
         ) as cur:
             rows = await cur.fetchall()

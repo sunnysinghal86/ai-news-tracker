@@ -11,14 +11,12 @@ from typing import List
 
 logger = logging.getLogger(__name__)
 
-RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
-FROM_EMAIL = os.getenv("FROM_EMAIL", "AI News Tracker <digest@yourdomain.com>")
-APP_URL = os.getenv("APP_URL", "http://localhost:3000")
+# Keys read fresh on every call — never cached at import time
 
 
 def build_html_email(user_name: str, articles: List[dict]) -> str:
     """Generate beautiful HTML email digest"""
-    
+    app_url  = os.getenv("APP_URL", "https://ai-signal-frontend.onrender.com")
     date_str = datetime.now().strftime("%A, %B %d, %Y")
     
     # Group by category
@@ -147,9 +145,9 @@ def build_html_email(user_name: str, articles: List[dict]) -> str:
     <!-- Footer -->
     <div style="text-align:center;padding:24px 0;border-top:1px solid #e5e7eb;margin-top:16px;">
       <p style="margin:0 0 8px;color:#9ca3af;font-size:12px;">You're receiving this because you subscribed to AI News Tracker.</p>
-      <a href="{APP_URL}" style="color:#3b82f6;font-size:12px;text-decoration:none;">View Dashboard</a>
+      <a href="{app_url}" style="color:#3b82f6;font-size:12px;text-decoration:none;">View Dashboard</a>
       &nbsp;·&nbsp;
-      <a href="{APP_URL}/unsubscribe" style="color:#9ca3af;font-size:12px;text-decoration:none;">Unsubscribe</a>
+      <a href="{app_url}/unsubscribe" style="color:#9ca3af;font-size:12px;text-decoration:none;">Unsubscribe</a>
     </div>
   </div>
 </body>
@@ -158,20 +156,25 @@ def build_html_email(user_name: str, articles: List[dict]) -> str:
 
 async def send_email(to_email: str, subject: str, html_body: str) -> bool:
     """Send email via Resend API"""
-    if not RESEND_API_KEY:
-        logger.error("RESEND_API_KEY not set")
+    # Read fresh on every call — not cached at import time
+    api_key  = os.getenv("RESEND_API_KEY", "")
+    from_email = os.getenv("FROM_EMAIL", "AI Signal <onboarding@resend.dev>")
+    
+    if not api_key:
+        logger.error("RESEND_API_KEY not set in environment variables")
         return False
     
+    logger.info(f"Sending via Resend — key prefix: {api_key[:8]}... from: {from_email}")
     try:
         async with aiohttp.ClientSession() as session:
             payload = {
-                "from": FROM_EMAIL,
+                "from": from_email,
                 "to": [to_email],
                 "subject": subject,
                 "html": html_body
             }
             headers = {
-                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json"
             }
             async with session.post("https://api.resend.com/emails", json=payload, headers=headers) as resp:

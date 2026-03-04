@@ -96,7 +96,7 @@ async def enrich_all(articles: List[RawArticle]) -> List[RawArticle]:
 
     async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
         results = await asyncio.gather(
-            *[bounded(a, session, idx=i) for i, a in enumerate(articles)],
+            *[bounded(a, session) for a in articles],
             return_exceptions=True,
         )
 
