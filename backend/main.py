@@ -117,6 +117,35 @@ async def health():
     return {"status": "healthy"}
 
 
+
+@app.post("/api/reprocess-rivals")
+async def reprocess_rivals():
+    """Force re-analyse all product/tool articles that have no competitor data."""
+    try:
+        async with get_db() as db:
+            async with db._db.execute(
+                """SELECT id FROM articles
+                   WHERE is_product_or_tool = 1
+                   AND (competitors IS NULL OR competitors = '[]' OR competitors = '')
+                   AND summary IS NOT NULL AND LENGTH(summary) > 40"""
+            ) as cur:
+                rows = await cur.fetchall()
+            ids_to_reset = [r["id"] for r in rows]
+
+            if ids_to_reset:
+                placeholders = ",".join("?" * len(ids_to_reset))
+                await db._db.execute(
+                    f"UPDATE articles SET summary = '' WHERE id IN ({placeholders})",
+                    ids_to_reset
+                )
+                await db._db.commit()
+
+        logger.info(f"Flagged {len(ids_to_reset)} product articles for re-analysis")
+        return {"message": f"Flagged {len(ids_to_reset)} articles — trigger a refresh to re-analyse them"}
+    except Exception as e:
+        logger.error(f"Reprocess rivals failed: {e}")
+        return {"error": str(e)}
+
 @app.post("/api/trigger-refresh")
 async def trigger_refresh(background_tasks: BackgroundTasks):
     background_tasks.add_task(refresh_news_job)
