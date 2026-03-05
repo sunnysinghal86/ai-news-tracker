@@ -154,12 +154,16 @@ class TestGetTopArticles:
 
     @pytest.mark.asyncio
     async def test_filters_by_category(self, db):
-        await seed_article(db, id="tool",     url="https://a.com/1", category="Product/Tool",  relevance_score=7, summary="A"*50)
-        await seed_article(db, id="research", url="https://a.com/2", category="Research Paper", relevance_score=8, summary="A"*50)
+        # Seed 5 Product/Tool articles (meets the >=5 threshold) + 1 Research Paper
+        for i in range(5):
+            await seed_article(db, id=f"tool{i}", url=f"https://a.com/t{i}",
+                               category="Product/Tool", relevance_score=7, summary="A"*50)
+        await seed_article(db, id="research", url="https://a.com/r1",
+                           category="Research Paper", relevance_score=8, summary="A"*50)
 
         results = await db.get_top_articles(categories=["Product/Tool"], min_relevance=1, hours=9999)
         assert all(r["category"] == "Product/Tool" for r in results)
-        assert len(results) == 1
+        assert len(results) == 5
 
     @pytest.mark.asyncio
     async def test_excludes_articles_without_summary(self, db):
@@ -220,9 +224,11 @@ class TestGetArticles:
     @pytest.mark.asyncio
     async def test_search_matches_title(self, db):
         await seed_article(db, id="match",  url="https://a.com/1",
-                           title="LangChain Agent Memory Launch")
+                           title="LangChain Agent Memory Launch",
+                           summary="Article about LangChain memory feature.")
         await seed_article(db, id="nomatch", url="https://a.com/2",
-                           title="Kubernetes Release Notes")
+                           title="Kubernetes Release Notes",
+                           summary="Notes about Kubernetes cluster updates.")
         result = await db.get_articles(limit=10, search="LangChain")
         assert len(result) == 1
         assert result[0]["id"] == "match"

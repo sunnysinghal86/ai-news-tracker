@@ -15,7 +15,6 @@ from news_fetcher import RawArticle
 from summarizer import ProcessedArticle
 
 
-# ── Event loop ────────────────────────────────────────────────
 @pytest.fixture(scope="session")
 def event_loop():
     loop = asyncio.new_event_loop()
@@ -23,23 +22,18 @@ def event_loop():
     loop.close()
 
 
-# ── In-memory DB via init_db() ────────────────────────────────
 @pytest.fixture
 async def db(tmp_path):
-    """
-    Fresh isolated database for each test.
-    Uses init_db() which sets the global _db — matching production code.
-    """
+    """Fresh isolated database per test using init_db() global pattern."""
     import database as db_mod
     db_mod.DB_PATH = str(tmp_path / "test.db")
-    db_mod._db = None  # reset global
+    db_mod._db = None
     await db_mod.init_db()
     yield db_mod._db
-    await db_mod._db.close()
+    await db_mod._db.disconnect()   # actual method name
     db_mod._db = None
 
 
-# ── Sample data factories ─────────────────────────────────────
 def make_raw_article(
     url="https://example.com/article-1",
     title="LangChain Launches Agent Memory Framework",
@@ -65,7 +59,7 @@ def make_processed_article(
     title="LangChain Launches Agent Memory Framework",
     url="https://example.com/article-1",
     source="Hacker News",
-    summary="LangChain v0.3 introduces persistent agent memory...",
+    summary="LangChain v0.3 introduces persistent agent memory.",
     category="Product/Tool",
     relevance_score=9,
     is_product_or_tool=True,

@@ -31,7 +31,7 @@ async def client(tmp_path):
     ) as ac:
         yield ac
 
-    await db_mod._db.close()
+    await db_mod._db.disconnect()
     db_mod._db = None
 
 
@@ -66,7 +66,7 @@ async def seeded_client(tmp_path):
     ) as ac:
         yield ac
 
-    await db_mod._db.close()
+    await db_mod._db.disconnect()
     db_mod._db = None
 
 
