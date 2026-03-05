@@ -4,13 +4,11 @@ Shared pytest fixtures for AI Signal test suite.
 
 import pytest
 import asyncio
-import aiosqlite
 import os
 import sys
-from datetime import datetime, timezone, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime, timezone
+from unittest.mock import MagicMock
 
-# Add backend root to path so imports work
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from news_fetcher import RawArticle
@@ -25,16 +23,20 @@ def event_loop():
     loop.close()
 
 
-# ── In-memory DB ──────────────────────────────────────────────
+# ── In-memory DB via init_db() ────────────────────────────────
 @pytest.fixture
 async def db(tmp_path):
-    """Fresh in-memory SQLite database for each test."""
-    os.environ["DB_PATH"] = str(tmp_path / "test.db")
-    from database import Database
-    database = Database()
-    await database.init()
-    yield database
-    await database.close()
+    """
+    Fresh isolated database for each test.
+    Uses init_db() which sets the global _db — matching production code.
+    """
+    import database as db_mod
+    db_mod.DB_PATH = str(tmp_path / "test.db")
+    db_mod._db = None  # reset global
+    await db_mod.init_db()
+    yield db_mod._db
+    await db_mod._db.close()
+    db_mod._db = None
 
 
 # ── Sample data factories ─────────────────────────────────────
@@ -85,7 +87,7 @@ def make_processed_article(
         relevance_score=relevance_score,
         is_product_or_tool=is_product_or_tool,
         product_name="LangChain" if is_product_or_tool else "",
-        competitors=competitors or [
+        competitors=competitors if competitors is not None else [
             {"name": "LlamaIndex", "description": "RAG framework", "comparison": "LangChain has native memory"},
             {"name": "AutoGen", "description": "Multi-agent framework", "comparison": "Simpler memory API"},
         ],
@@ -99,7 +101,6 @@ def make_user(
     categories=None,
     min_relevance=5,
 ):
-    from unittest.mock import MagicMock
     user = MagicMock()
     user.email = email
     user.name = name

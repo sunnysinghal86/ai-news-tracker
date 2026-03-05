@@ -1,12 +1,5 @@
 """
 Unit tests — news_fetcher.py
-
-Specs:
-  - gen_id: deterministic MD5-based ID from URL
-  - strip_html: removes tags, decodes entities, collapses whitespace
-  - is_relevant: keyword filtering gates articles correctly
-  - deduplication: same URL never produces two articles
-  - fetch functions handle HTTP errors gracefully
 """
 
 import pytest
@@ -88,33 +81,25 @@ class TestStripHtml:
 
 class TestRawArticle:
     def test_default_content_is_empty(self):
-        a = RawArticle(
-            id="abc", title="Test", url="https://x.com",
-            source="HN", published_at=datetime.now(timezone.utc)
-        )
+        a = RawArticle(id="abc", title="Test", url="https://x.com",
+                       source="HN", published_at=datetime.now(timezone.utc))
         assert a.content == ""
 
     def test_default_score_is_zero(self):
-        a = RawArticle(
-            id="abc", title="Test", url="https://x.com",
-            source="HN", published_at=datetime.now(timezone.utc)
-        )
+        a = RawArticle(id="abc", title="Test", url="https://x.com",
+                       source="HN", published_at=datetime.now(timezone.utc))
         assert a.score == 0
 
     def test_tags_default_to_empty_list(self):
-        a = RawArticle(
-            id="abc", title="Test", url="https://x.com",
-            source="HN", published_at=datetime.now(timezone.utc)
-        )
+        a = RawArticle(id="abc", title="Test", url="https://x.com",
+                       source="HN", published_at=datetime.now(timezone.utc))
         assert a.tags == []
 
     def test_fields_stored_correctly(self):
         now = datetime.now(timezone.utc)
-        a = RawArticle(
-            id="test123", title="My Article", url="https://example.com",
-            source="arXiv", published_at=now, content="Some content",
-            author="Jane Doe", score=42
-        )
+        a = RawArticle(id="test123", title="My Article", url="https://example.com",
+                       source="arXiv", published_at=now, content="Some content",
+                       author="Jane Doe", score=42)
         assert a.id == "test123"
         assert a.title == "My Article"
         assert a.author == "Jane Doe"
@@ -122,13 +107,14 @@ class TestRawArticle:
 
 
 # ══════════════════════════════════════════════════════════════
-# fetch_hacker_news — HTTP error handling
+# fetch_hackernews — HTTP error handling
+# (actual function name is fetch_hackernews, takes a session)
 # ══════════════════════════════════════════════════════════════
 
 class TestFetchHackerNews:
     @pytest.mark.asyncio
     async def test_returns_empty_on_http_error(self):
-        from news_fetcher import fetch_hacker_news
+        from news_fetcher import fetch_hackernews
         mock_resp = AsyncMock()
         mock_resp.status = 500
         mock_resp.json = AsyncMock(return_value={})
@@ -138,26 +124,21 @@ class TestFetchHackerNews:
         mock_session = MagicMock()
         mock_session.get = MagicMock(return_value=mock_resp)
 
-        with patch("news_fetcher.aiohttp.ClientSession") as mock_cs:
-            instance = AsyncMock()
-            instance.__aenter__ = AsyncMock(return_value=mock_session)
-            instance.__aexit__ = AsyncMock(return_value=False)
-            mock_cs.return_value = instance
-            result = await fetch_hacker_news()
+        result = await fetch_hackernews(mock_session)
         assert isinstance(result, list)
 
     @pytest.mark.asyncio
-    async def test_returns_empty_on_network_error(self):
-        from news_fetcher import fetch_hacker_news
+    async def test_returns_empty_on_exception(self):
+        from news_fetcher import fetch_hackernews
         import aiohttp
-        with patch("news_fetcher.aiohttp.ClientSession") as mock_cs:
-            mock_cs.side_effect = aiohttp.ClientError("Network error")
-            result = await fetch_hacker_news()
+        mock_session = MagicMock()
+        mock_session.get.side_effect = aiohttp.ClientError("Network error")
+        result = await fetch_hackernews(mock_session)
         assert result == []
 
 
 # ══════════════════════════════════════════════════════════════
-# fetch_arxiv — HTTP error handling
+# fetch_arxiv — takes a session argument
 # ══════════════════════════════════════════════════════════════
 
 class TestFetchArxiv:
@@ -166,65 +147,83 @@ class TestFetchArxiv:
         from news_fetcher import fetch_arxiv
         mock_resp = AsyncMock()
         mock_resp.status = 503
+        mock_resp.text = AsyncMock(return_value="")
         mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
         mock_resp.__aexit__ = AsyncMock(return_value=False)
 
         mock_session = MagicMock()
         mock_session.get = MagicMock(return_value=mock_resp)
 
-        with patch("news_fetcher.aiohttp.ClientSession") as mock_cs:
-            instance = AsyncMock()
-            instance.__aenter__ = AsyncMock(return_value=mock_session)
-            instance.__aexit__ = AsyncMock(return_value=False)
-            mock_cs.return_value = instance
-            result = await fetch_arxiv()
+        result = await fetch_arxiv(mock_session)
         assert isinstance(result, list)
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_on_exception(self):
+        from news_fetcher import fetch_arxiv
+        import aiohttp
+        mock_session = MagicMock()
+        mock_session.get.side_effect = aiohttp.ClientError("timeout")
+        result = await fetch_arxiv(mock_session)
+        assert result == []
 
 
 # ══════════════════════════════════════════════════════════════
-# Deduplication — fetch_all_news should deduplicate by URL
+# fetch_all_news — deduplication (deduped by article.id)
 # ══════════════════════════════════════════════════════════════
 
 class TestDeduplication:
     @pytest.mark.asyncio
-    async def test_duplicate_urls_removed(self):
-        from news_fetcher import fetch_all_news
+    async def test_duplicate_ids_removed(self):
+        """fetch_all_news deduplicates by article.id (MD5 of URL)."""
+        from news_fetcher import fetch_all_news, gen_id
         now = datetime.now(timezone.utc)
-        dup = RawArticle(id="dup1", title="Same Article",
-                         url="https://same.com/article",
-                         source="HN", published_at=now, score=100)
-        dup2 = RawArticle(id="dup2", title="Same Article (copy)",
-                          url="https://same.com/article",
-                          source="Medium", published_at=now, score=50)
+        shared_url = "https://same.com/article"
+        shared_id = gen_id(shared_url)
 
-        with patch("news_fetcher.fetch_hacker_news", return_value=[dup]), \
+        dup1 = RawArticle(id=shared_id, title="Same Article",
+                          url=shared_url, source="HN", published_at=now, score=100)
+        dup2 = RawArticle(id=shared_id, title="Same Article (copy)",
+                          url=shared_url, source="Medium", published_at=now, score=50)
+
+        with patch("news_fetcher.fetch_hackernews", return_value=[dup1]), \
              patch("news_fetcher.fetch_arxiv", return_value=[dup2]), \
              patch("news_fetcher.fetch_newsapi", return_value=[]), \
-             patch("news_fetcher.fetch_medium_rss", return_value=[]), \
-             patch("news_fetcher.fetch_platform_engineering", return_value=[]), \
-             patch("news_fetcher.fetch_platform_weekly", return_value=[]):
+             patch("news_fetcher.fetch_medium", return_value=[]), \
+             patch("news_fetcher.fetch_platform_sources", return_value=[]):
             results = await fetch_all_news()
 
-        urls = [a.url for a in results]
-        assert len(urls) == len(set(urls)), "Duplicate URLs found in results"
+        ids = [a.id for a in results]
+        assert len(ids) == len(set(ids)), "Duplicate IDs found in results"
 
     @pytest.mark.asyncio
     async def test_unique_articles_all_returned(self):
-        from news_fetcher import fetch_all_news
+        from news_fetcher import fetch_all_news, gen_id
         now = datetime.now(timezone.utc)
         articles = [
-            RawArticle(id=f"id{i}", title=f"Article {i}",
+            RawArticle(id=gen_id(f"https://example.com/{i}"),
+                       title=f"Article {i}",
                        url=f"https://example.com/{i}",
                        source="HN", published_at=now)
             for i in range(5)
         ]
 
-        with patch("news_fetcher.fetch_hacker_news", return_value=articles), \
+        with patch("news_fetcher.fetch_hackernews", return_value=articles), \
              patch("news_fetcher.fetch_arxiv", return_value=[]), \
              patch("news_fetcher.fetch_newsapi", return_value=[]), \
-             patch("news_fetcher.fetch_medium_rss", return_value=[]), \
-             patch("news_fetcher.fetch_platform_engineering", return_value=[]), \
-             patch("news_fetcher.fetch_platform_weekly", return_value=[]):
+             patch("news_fetcher.fetch_medium", return_value=[]), \
+             patch("news_fetcher.fetch_platform_sources", return_value=[]):
             results = await fetch_all_news()
 
         assert len(results) == 5
+
+    @pytest.mark.asyncio
+    async def test_source_exceptions_dont_crash_fetch_all(self):
+        """A failing source should not crash fetch_all_news."""
+        from news_fetcher import fetch_all_news
+        with patch("news_fetcher.fetch_hackernews", side_effect=Exception("HN down")), \
+             patch("news_fetcher.fetch_arxiv", return_value=[]), \
+             patch("news_fetcher.fetch_newsapi", return_value=[]), \
+             patch("news_fetcher.fetch_medium", return_value=[]), \
+             patch("news_fetcher.fetch_platform_sources", return_value=[]):
+            results = await fetch_all_news()
+        assert isinstance(results, list)
