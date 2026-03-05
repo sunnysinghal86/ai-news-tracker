@@ -96,7 +96,7 @@ function Stars({ score }) {
 }
 
 function CompetitorBlock({ competitors, advantage, productName }) {
-  if (!competitors?.length) return null;
+  if (!competitors?.length && !advantage) return null;
   return (
     <div style={{ marginTop: "18px", border: `1px solid ${T.rule}`, borderLeft: `4px solid ${T.red}` }}>
       <div style={{ padding: "7px 14px", background: T.ink, display: "flex", alignItems: "center" }}>
@@ -242,20 +242,21 @@ function ArticleCard({ article, expanded, onToggle, isLead }) {
               />
             : <div style={{
                 marginTop: "14px", padding: "12px 14px",
-                background: T.paperDk, borderLeft: `3px solid ${T.rule}`,
+                background: T.paperDk, borderLeft: `3px solid ${T.gold}`,
                 fontSize: "12px", color: T.muted,
-                fontFamily: "Georgia, serif", fontStyle: "italic",
-                lineHeight: 1.6,
+                fontFamily: "Georgia, serif", lineHeight: 1.6,
               }}>
-                <strong style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.1em", textTransform: "uppercase", fontSize: "10px", fontStyle: "normal" }}>
-                  {article.product_name || article.title} —
-                </strong>
-                {" "}Competitor data will appear after the next scheduled refresh when Claude analyses this as a product or tool.
-                {article.competitive_advantage && (
-                  <div style={{ marginTop: "8px", color: T.green }}>
-                    <strong>Advantage: </strong>{article.competitive_advantage}
-                  </div>
-                )}
+                {article.competitive_advantage
+                  ? <>
+                      <div style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.1em", textTransform: "uppercase", fontSize: "10px", color: T.gold, marginBottom: "6px" }}>
+                        Competitive Edge
+                      </div>
+                      <div style={{ fontStyle: "italic" }}>{article.competitive_advantage}</div>
+                    </>
+                  : <span style={{ fontStyle: "italic" }}>
+                      No competitor data yet — will be populated on next refresh.
+                    </span>
+                }
               </div>
           }
         </div>
