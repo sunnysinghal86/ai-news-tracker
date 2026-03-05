@@ -180,25 +180,27 @@ async def _call_claude(prompt: str, session: aiohttp.ClientSession, retries: int
 
 
 async def _analyse_article(article: RawArticle, session: aiohttp.ClientSession) -> ProcessedArticle:
+    content_text = (article.content or "")[:1200]
     prompt = (
         "Analyse this AI/tech article and return ONLY valid JSON. No markdown, no explanation.\n\n"
         f"Title: {article.title}\n"
         f"Source: {article.source}\n"
-        f"Content: {(article.content or '')[:600]}\n\n"
+        f"Content: {content_text}\n\n"
         "Rules:\n"
         "- is_product_or_tool = true for ANY tool, library, framework, platform, model, API, or service\n"
-        "- If is_product_or_tool is true, include 2-3 REAL named competitors with specific comparisons\n"
+        "- If is_product_or_tool is true, you MUST include 2-3 real named competitors — use your knowledge if content is sparse\n"
+        "- competitive_advantage must always be filled if is_product_or_tool is true — never leave blank\n"
         "- relevance_score: 8-10 for platform eng/MLOps/AI infra, 5-7 general AI news, 1-4 unrelated\n\n"
         "Return exactly this JSON:\n"
         "{\n"
-        '"  \"summary\": \"2-3 sentences for software/platform engineers, be specific\",\n"' 
+        '"  \"summary\": \"2-3 sentences for software/platform engineers, be specific\",\n"'
         '"  \"category\": \"Product/Tool | AI Model | Research Paper | Industry News | Tutorial/Guide | Platform/Infrastructure\",\n"'
         '"  \"tags\": [\"tag1\", \"tag2\", \"tag3\"],\n"'
         '"  \"relevance_score\": <integer 1-10>,\n"'
         '"  \"is_product_or_tool\": <true or false>,\n"'
         '"  \"product_name\": \"<product name or empty string>\",\n"'
-        '"  \"competitors\": [{{\"name\": \"Real Name\", \"description\": \"what they do\", \"comparison\": \"how this differs\"}}],\n"'
-        '"  \"competitive_advantage\": \"<key differentiator or empty string>\"\n"'
+        '"  \"competitors\": [{\"name\": \"Real Name\", \"description\": \"what they do\", \"comparison\": \"how this differs\"}],\n"'
+        '"  \"competitive_advantage\": \"<one sentence key differentiator — required for all products>\"\n"'
         "}"
     )
 
