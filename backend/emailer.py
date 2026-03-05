@@ -191,23 +191,13 @@ async def send_email(to_email: str, subject: str, html_body: str) -> bool:
 
 
 async def send_daily_digest(user, articles: List[dict]) -> bool:
-    """Send daily digest to a user"""
+    """Send daily digest to a user. Articles are pre-filtered by caller."""
     if not articles:
         logger.info(f"No articles to send to {user.email}")
         return False
     
-    # Filter by user preferences
-    filtered = articles
-    if user.categories:
-        filtered = [a for a in articles if a.get("category") in user.categories]
-    if user.min_relevance:
-        filtered = [a for a in filtered if a.get("relevance_score", 0) >= user.min_relevance]
-    
-    if not filtered:
-        filtered = articles[:5]  # fallback
-    
     date_str = datetime.now().strftime("%b %d, %Y")
-    subject = f"🤖 AI News Digest – {date_str} ({len(filtered)} stories)"
+    subject = f"🤖 AI News Digest – {date_str} ({len(articles)} stories)"
     
-    html = build_html_email(user.name or "there", filtered)
+    html = build_html_email(user.name or "there", articles)
     return await send_email(user.email, subject, html)

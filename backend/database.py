@@ -185,11 +185,49 @@ class Database:
             rows = await cur.fetchall()
         return [self._to_dict(r) for r in rows]
 
-    async def get_top_articles(self, limit=10, min_relevance=4) -> List[dict]:
-        """Get top articles for digest — ordered by relevance then recency."""
+    async def get_top_articles(
+        self,
+        limit: int = 10,
+        min_relevance: int = 5,
+        categories: list = None,
+        hours: int = 24,
+    ) -> List[dict]:
+        """
+        Get top articles for digest with per-user filtering.
+        - Only articles fetched within `hours` window (default 24h)
+        - Falls back to 48h then 7 days if fewer than 5 results
+        - Filters by min_relevance and optional category list
+        """
+        for window in [hours, 48, 168]:  # 24h → 48h → 7 day fallback
+            params = [min_relevance, window]
+            cat_clause = ""
+            if categories:
+                placeholders = ",".join("?" * len(categories))
+                cat_clause = f"AND category IN ({placeholders})"
+                params = [min_relevance, window] + list(categories)
+
+            query = f"""
+                SELECT * FROM articles
+                WHERE relevance_score >= ?
+                AND summary IS NOT NULL AND LENGTH(summary) > 40
+                AND fetched_at >= datetime('now', '-' || ? || ' hours')
+                {cat_clause}
+                ORDER BY relevance_score DESC, fetched_at DESC
+                LIMIT {limit}
+            """
+            async with self._db.execute(query, params) as cur:
+                rows = await cur.fetchall()
+            articles = [self._to_dict(r) for r in rows]
+
+            if len(articles) >= 5:
+                logger.info(f"Digest query: {len(articles)} articles from last {window}h (min_score={min_relevance})")
+                return articles
+
+        # Last resort — best available regardless of date
+        logger.warning("Digest fallback: returning best available articles ignoring date window")
         async with self._db.execute(
-            "SELECT * FROM articles WHERE relevance_score >= ? "
-            "ORDER BY relevance_score DESC, fetched_at DESC LIMIT ?",
+            "SELECT * FROM articles WHERE relevance_score >= ? AND summary IS NOT NULL "
+            "AND LENGTH(summary) > 40 ORDER BY relevance_score DESC, fetched_at DESC LIMIT ?",
             (min_relevance, limit),
         ) as cur:
             rows = await cur.fetchall()

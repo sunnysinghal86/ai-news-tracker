@@ -92,10 +92,21 @@ async def send_digest_job():
     try:
         async with get_db() as db:
             active_users = await db.get_active_users()
-            top_articles = await db.get_top_articles(limit=10)
-        # Send all digests concurrently — scales to 100+ users without slowing down
+
+        # Each user gets their own filtered article list
         async def send_one(user):
-            success = await send_daily_digest(user, top_articles)
+            async with get_db() as db:
+                articles = await db.get_top_articles(
+                    limit=10,
+                    min_relevance=user.min_relevance or 5,
+                    categories=user.categories or None,
+                    hours=24,
+                )
+            logger.info(
+                f"Digest for {user.email}: {len(articles)} articles "
+                f"(min_score={user.min_relevance}, cats={user.categories or 'all'})"
+            )
+            success = await send_daily_digest(user, articles)
             if success:
                 logger.info(f"Digest sent to {user.email}")
             else:
