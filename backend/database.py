@@ -100,9 +100,19 @@ class Database:
 
 
     async def get_summarised_ids(self) -> set:
-        """Return IDs of articles that already have a Claude-generated summary."""
+        """
+        Return IDs of articles that are fully processed and can be skipped.
+        Excludes product/tool articles with no competitor data so they get re-analysed.
+        """
         async with self._db.execute(
-            "SELECT id FROM articles WHERE summary IS NOT NULL AND summary != '' AND LENGTH(summary) > 40"
+            """
+            SELECT id FROM articles
+            WHERE summary IS NOT NULL AND summary != '' AND LENGTH(summary) > 40
+            AND NOT (
+                is_product_or_tool = 1
+                AND (competitors IS NULL OR competitors = '[]' OR competitors = '')
+            )
+            """
         ) as cur:
             rows = await cur.fetchall()
         return {r["id"] for r in rows}
