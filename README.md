@@ -52,7 +52,7 @@ It's not a newsletter you subscribed to and forgot. It's infrastructure you own.
 | **Keep-Alive Cron** | cron-job.org pings `/health` every 10 minutes to prevent Render spin-down |
 | **Daily Digest Email** | One HTML email per day at 08:00 UTC via Resend |
 | **Editorial Dashboard** | Newspaper-style React UI — collapsible summaries, rival analysis, filters |
-| **Multi-subscriber** | Up to 20 users, each with personal preferences and relevance thresholds |
+| **Multi-subscriber** | Up to 75 users, each with personal preferences and relevance thresholds |
 
 ---
 
@@ -119,7 +119,7 @@ It's not a newsletter you subscribed to and forgot. It's infrastructure you own.
                                                         ▼
                                             ┌──────────────────────┐
                                             │  Subscriber Inboxes  │
-                                            │  (up to 20 users)    │
+                                            │  (up to 75 users)    │
                                             └──────────────────────┘
 
  ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -176,17 +176,17 @@ The repo includes `render.yaml` for one-click Blueprint deploy — both frontend
 #    ANTHROPIC_API_KEY=sk-ant-...
 #    RESEND_API_KEY=re_...
 #    NEWS_API_KEY=...
-#    FROM_EMAIL=AI Signal <onboarding@resend.dev>
-#    SEED_SUBSCRIBERS=YourName:you@email.com
+#    FROM_EMAIL=AI Signal <digest@ai-signal.app>
+#    SEED_SUBSCRIBERS=YourName:you@email.com:5
 #    PYTHON_VERSION=3.12.0
 
 # 4. Click Deploy. Both services go live with public HTTPS URLs.
 ```
 
 Your app will be live at:
-- **Frontend**: `https://ai-signal-frontend.onrender.com`
-- **Backend API**: `https://ai-signal-backend.onrender.com`
-- **API Docs**: `https://ai-signal-backend.onrender.com/docs`
+- **Frontend**: `https://ai-signal.app`
+- **Backend API**: `https://api.ai-signal.app`
+- **API Docs**: `https://api.ai-signal.app/docs`
 
 ---
 
@@ -198,7 +198,7 @@ Render's free tier spins down web services after 15 minutes of inactivity, causi
 
 1. Go to **[cron-job.org](https://cron-job.org)** — free account, no card
 2. Create a new cron job:
-   - **URL**: `https://ai-signal-backend.onrender.com/health`
+   - **URL**: `https://api.ai-signal.app/health`
    - **Schedule**: Every 10 minutes
    - **Method**: GET
 3. Save — the service now stays warm 24/7
@@ -233,7 +233,7 @@ The `/health` endpoint returns `{"status": "healthy"}` and costs nothing to call
 |---|---|---|---|
 | Render (backend) | 750 hr/month | ~720 hr | **$0** |
 | Render (frontend) | Unlimited static | — | **$0** |
-| Resend (email) | 3,000 emails/month | ~300 (20 users) | **$0** |
+| Resend (email) | 3,000 emails/month | ~2,250 (75 users) | **$0** |
 | NewsAPI | 100 req/day | ~6 req/day | **$0** |
 | HN Algolia API | Unlimited | — | **$0** |
 | arXiv API | Unlimited | — | **$0** |
@@ -254,7 +254,7 @@ The `/health` endpoint returns `{"status": "healthy"}` and costs nothing to call
 # Required
 ANTHROPIC_API_KEY=sk-ant-...          # Claude Haiku for AI analysis
 RESEND_API_KEY=re_...                  # Email delivery (resend.com)
-FROM_EMAIL=AI Signal <onboarding@resend.dev>
+FROM_EMAIL=AI Signal <digest@ai-signal.app>
 PYTHON_VERSION=3.12.0                  # Pin Python — avoids build failures
 
 # Strongly recommended
@@ -262,11 +262,11 @@ NEWS_API_KEY=...                       # newsapi.org free key (100 req/day)
 
 # Subscriber seeding — survives ephemeral filesystem restarts
 # Format: "Name1:email1@x.com,Name2:email2@x.com"
-SEED_SUBSCRIBERS=Alice:alice@example.com
+SEED_SUBSCRIBERS=Alice:alice@example.com,Bob:bob@example.com:7  # optional :min_relevance suffix
 
 # App settings
-APP_URL=https://ai-signal-frontend.onrender.com
-DB_PATH=/tmp/news_tracker.db          # Ephemeral — fine, articles re-fetched hourly
+APP_URL=https://ai-signal.app
+DB_PATH=/tmp/news_tracker.db          # Ephemeral — upgrade to /data with Render persistent disk for production
 ```
 
 ---
@@ -287,6 +287,108 @@ scheduler.add_job(send_digest_job, "cron", hour=7, minute=30)  # digest at 7:30a
 > ⚠️ Do not set refresh below 2 hours — Claude Haiku has a 10,000 output token/minute rate limit. Already-summarised articles are skipped automatically so cost stays low regardless of frequency.
 
 **Add a source** (`news_fetcher.py`): implement an async function returning `List[RawArticle]`, add it to the `gather()` call in `fetch_all_news()`.
+
+---
+
+## Testing
+
+The backend has a full unit and integration test suite covering all modules.
+
+### Setup
+
+```bash
+# Requires Python 3.12 (not 3.13/3.14 — pydantic-core build constraint)
+python3.12 --version   # verify
+
+# Create a dedicated virtualenv
+cd backend
+python3.12 -m venv .venv
+source .venv/bin/activate       # macOS / Linux
+# .venv\Scripts\activate        # Windows
+
+# Install all dependencies
+pip install -r requirements.txt
+pip install -r requirements-test.txt
+```
+
+### Run Tests
+
+```bash
+# All tests
+pytest
+
+# With verbose output
+pytest -v
+
+# Single file
+pytest tests/test_database.py -v
+
+# Single test class
+pytest tests/test_database.py::TestGetTopArticles -v
+
+# Single test
+pytest tests/test_summarizer.py::TestCallClaude::test_retries_on_429_then_returns_none -v
+
+# Stop on first failure
+pytest -x
+```
+
+### Test Coverage — 72 test cases across 5 modules
+
+#### `tests/test_news_fetcher.py` — 21 tests
+| Class | What's covered |
+|---|---|
+| `TestGenId` | Same URL → same ID, different URLs → different IDs, always 12 chars, alphanumeric, stable on empty string |
+| `TestStripHtml` | Removes tags, nested tags, decodes `&amp;`/`&nbsp;`, collapses whitespace, strips `<script>` and `<style>` blocks |
+| `TestRawArticle` | Default content/score/tags are correct, all fields stored accurately |
+| `TestFetchHackerNews` | Returns empty list on HTTP 500, returns empty list on network exception |
+| `TestFetchArxiv` | Returns empty list on HTTP 503, returns empty list on network exception |
+| `TestDeduplication` | Duplicate IDs removed, all unique articles returned, failed source doesn't crash `fetch_all_news` |
+
+#### `tests/test_database.py` — 22 tests
+| Class | What's covered |
+|---|---|
+| `TestUpsertArticles` | Inserts new, updates existing on conflict, inserts multiple, competitors serialised as JSON, empty list is no-op |
+| `TestGetSumarisedIds` | Includes fully processed, excludes empty/short summary, **excludes product with no competitors** (re-queue spec), includes product with competitors |
+| `TestGetTopArticles` | Filters by `min_relevance`, ordered by score desc, filters by category, excludes no-summary articles, respects limit, fallback time window (24h→48h→7d) |
+| `TestGetArticles` | No filters, filter by source, filter by `min_relevance`, title search, pagination no overlap |
+| `TestUserManagement` | Create and retrieve user, `min_relevance` stored, categories stored, duplicate email no crash |
+| `TestGetStats` | Total count accurate, product count accurate, empty DB returns zero |
+
+#### `tests/test_summarizer.py` — 14 tests
+| Class | What's covered |
+|---|---|
+| `TestCallClaude` | Returns text on 200, returns None with no API key, retries on 429 then returns None, returns None on 5xx |
+| `TestAnalyseArticle` | Parses valid JSON fully, defaults on malformed JSON, returns `ProcessedArticle` on None response, missing fields use defaults |
+| `TestEnrichOne` | Skips rich content (>200 chars), skips HN URLs, skips 5 paywalled domains, uses trafilatura when available, og:description regex correct, handles HTTP 404, handles network exception |
+| `TestSummarizeArticles` | Caps at 30 articles when API key set, no-key returns content fallback for all, **content cap is 1200 chars** (not old 600) |
+
+#### `tests/test_emailer.py` — 14 tests
+| Class | What's covered |
+|---|---|
+| `TestSendEmail` | Returns False with no key, **reads API key fresh at call time** (not cached at import), returns False on 401, returns False on network exception |
+| `TestSendDailyDigest` | Returns False for empty articles, subject includes correct article count, sends to correct email address, returns True on success, returns False on send failure |
+| `TestBuildHtmlEmail` | Includes subscriber name, includes article title, includes article summary, renders without competitors, renders multiple articles, returns a string |
+
+#### `tests/test_api.py` — 15 integration tests
+| Class | Endpoints covered |
+|---|---|
+| `TestHealthEndpoints` | `GET /` returns 200, `GET /health` returns `{"status":"healthy"}` |
+| `TestGetNews` | Returns articles + count, empty DB returns `[]`, filter by category, filter by `min_relevance`, search, limit enforced, max limit 100, pagination no overlap |
+| `TestStats` | `GET /api/news/stats` returns `total_articles`, empty DB returns 0 |
+| `TestMeta` | Categories list contains known values, sources list non-empty |
+| `TestSubscribe` | `POST /api/users` creates subscriber, duplicate email no 500, response contains user object |
+| `TestTriggerEndpoints` | `POST /api/trigger-refresh` returns 200, `POST /api/trigger-digest` returns 200 |
+| `TestReprocessRivals` | `POST /api/reprocess-rivals` returns 0 on empty DB, handles seeded data correctly |
+
+### Key Business Logic Specs
+
+These tests directly encode critical product behaviours:
+
+- **Re-queue spec** (`TestGetSumarisedIds::test_excludes_product_with_no_competitors`) — product articles with empty competitors are excluded from the "already done" set, forcing Claude to re-analyse them on next refresh
+- **1200 char content window** (`TestSummarizeArticles::test_content_cap_is_1200_chars_in_prompt`) — verifies trafilatura upgrade was reflected in the Claude prompt (old cap was 600)
+- **API key freshness** (`TestSendEmail::test_reads_api_key_fresh_not_cached`) — Resend key must be read from env at call time, not cached at module import
+- **Digest time-window fallback** (`TestGetTopArticles::test_fallback_expands_time_window`) — if fewer than 5 articles in 24h window, query expands to 48h then 7 days before falling back to best available
 
 ---
 
