@@ -42,9 +42,16 @@ async def lifespan(app: FastAPI):
             for entry in seed.split(","):
                 entry = entry.strip()
                 if ":" in entry:
-                    name, email = entry.split(":", 1)
-                    await db.create_user(email=email.strip(), name=name.strip())
-                    logger.info(f"Seeded subscriber: {email.strip()}")
+                    # Format: "Name:email" or "Name:email:min_relevance"
+                    parts = entry.split(":", 2)
+                    name  = parts[0].strip()
+                    email = parts[1].strip()
+                    min_relevance = int(parts[2].strip()) if len(parts) > 2 else 5
+                    await db.create_user(
+                        email=email, name=name,
+                        min_relevance=min_relevance,
+                    )
+                    logger.info(f"Seeded subscriber: {email} (min_relevance={min_relevance})")
 
     asyncio.create_task(refresh_news_job())
     yield
