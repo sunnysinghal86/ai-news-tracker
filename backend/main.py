@@ -112,7 +112,11 @@ async def send_digest_job():
             else:
                 logger.error(f"Digest FAILED for {user.email} — check RESEND_API_KEY and FROM_EMAIL")
 
-        await asyncio.gather(*[send_one(u) for u in active_users])
+        # Send sequentially with a 1s gap — Resend free tier allows 2 req/sec
+        for i, user in enumerate(active_users):
+            await send_one(user)
+            if i < len(active_users) - 1:
+                await asyncio.sleep(1)
         logger.info(f"Digest complete — {len(active_users)} users")
     except Exception as e:
         logger.error(f"Digest failed: {e}", exc_info=True)
