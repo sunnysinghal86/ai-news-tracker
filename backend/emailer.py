@@ -201,3 +201,81 @@ async def send_daily_digest(user, articles: List[dict]) -> bool:
     
     html = build_html_email(user.name or "there", articles)
     return await send_email(user.email, subject, html)
+
+
+async def send_approval_request(
+    subscriber_email: str,
+    subscriber_name: str,
+    approval_token: str,
+) -> bool:
+    """
+    Send admin an approval/reject email when someone new subscribes.
+    Admin email is read from ADMIN_EMAIL env var.
+    """
+    admin_email = os.getenv("ADMIN_EMAIL", "")
+    app_url     = os.getenv("APP_URL", "https://ai-signal.app")
+
+    if not admin_email:
+        logger.error("ADMIN_EMAIL not set — cannot send approval request")
+        return False
+
+    approve_url = f"{app_url}/api/users/approve?token={approval_token}"
+    reject_url  = f"{app_url}/api/users/reject?token={approval_token}"
+
+    from datetime import datetime as _dt
+    requested_at = _dt.utcnow().strftime("%b %d, %Y at %H:%M UTC")
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: #f5f5f5; margin: 0; padding: 40px 20px; }}
+  .card {{ background: #fff; border-radius: 12px; max-width: 480px;
+           margin: 0 auto; padding: 36px;
+           box-shadow: 0 2px 12px rgba(0,0,0,0.08); }}
+  .label {{ font-size: 11px; font-weight: 700; letter-spacing: 2px;
+            text-transform: uppercase; color: #888; margin-bottom: 20px; }}
+  h2 {{ font-size: 22px; font-weight: 700; color: #111; margin: 0 0 8px; }}
+  .sub {{ background: #f8f8f8; border-radius: 8px; padding: 16px; margin: 20px 0; }}
+  .sub p {{ margin: 5px 0; font-size: 14px; color: #444; }}
+  .actions {{ display: flex; gap: 12px; margin-top: 28px; }}
+  .btn {{ flex: 1; padding: 14px; border-radius: 8px; text-align: center;
+          font-size: 15px; font-weight: 600; text-decoration: none; display: block; }}
+  .approve {{ background: #16a34a; color: #fff; }}
+  .reject  {{ background: #f5f5f5; color: #ef4444;
+              border: 1.5px solid #fca5a5; }}
+  .footer {{ margin-top: 24px; font-size: 12px; color: #bbb; text-align: center; }}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="label">AI Signal · New Subscription Request</div>
+  <h2>Someone wants to subscribe 📬</h2>
+  <p style="color:#555;font-size:15px;margin:4px 0 0">
+    Review and approve or reject with one click.
+  </p>
+  <div class="sub">
+    <p><strong>Name:</strong> {subscriber_name}</p>
+    <p><strong>Email:</strong> {subscriber_email}</p>
+    <p><strong>Requested:</strong> {requested_at}</p>
+  </div>
+  <div class="actions">
+    <a href="{approve_url}" class="btn approve">✅ Approve</a>
+    <a href="{reject_url}"  class="btn reject">❌ Reject</a>
+  </div>
+  <div class="footer">
+    Single-use links · AI Signal ·
+    <a href="{app_url}" style="color:#bbb;">ai-signal.app</a>
+  </div>
+</div>
+</body>
+</html>"""
+
+    return await send_email(
+        to_email=admin_email,
+        subject=f"🔔 AI Signal — Approve {subscriber_name} ({subscriber_email})?",
+        html_body=html,
+    )

@@ -50,6 +50,7 @@ async def lifespan(app: FastAPI):
                     await db.create_user(
                         email=email, name=name,
                         min_relevance=min_relevance,
+                        require_approval=False,  # seed users bypass approval
                     )
                     logger.info(f"Seeded subscriber: {email} (min_relevance={min_relevance})")
 
