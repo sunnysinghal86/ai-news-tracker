@@ -53,6 +53,7 @@ It's not a newsletter you subscribed to and forgot. It's infrastructure you own.
 | **Daily Digest Email** | One HTML email per day at 08:00 UTC via Resend |
 | **Editorial Dashboard** | Newspaper-style React UI — collapsible summaries, rival analysis, filters |
 | **Multi-subscriber** | Up to 75 users, each with personal preferences and relevance thresholds |
+| **Approval Workflow** | New subscribers require admin approval via one-click email — Approve or Reject buttons |
 
 ---
 
@@ -218,6 +219,9 @@ The `/health` endpoint returns `{"status": "healthy"}` and costs nothing to call
 | `GET` | `/api/users` | All subscribers |
 | `POST` | `/api/users` | Add subscriber `{email, name, min_relevance, categories}` |
 | `DELETE` | `/api/users/{email}` | Remove subscriber |
+| `GET` | `/api/users/approve?token=xxx` | Approve pending subscriber (linked from email) |
+| `GET` | `/api/users/reject?token=xxx` | Reject and delete pending subscriber (linked from email) |
+| `GET` | `/api/users/pending` | List subscribers awaiting approval |
 | `GET` | `/api/config` | Check which API keys are configured |
 | `GET` | `/api/config/debug-claude` | Test Claude API connection live |
 | `POST` | `/api/trigger-refresh` | Manual news refresh |
@@ -233,7 +237,7 @@ The `/health` endpoint returns `{"status": "healthy"}` and costs nothing to call
 |---|---|---|---|
 | Render (backend) | 750 hr/month | ~720 hr | **$0** |
 | Render (frontend) | Unlimited static | — | **$0** |
-| Resend (email) | 3,000 emails/month | ~2,250 (75 users) | **$0** |
+| Resend (email) | 3,000 emails/month | ~90 (3 users) → ~2,250 (75 users) | **$0** |
 | NewsAPI | 100 req/day | ~6 req/day | **$0** |
 | HN Algolia API | Unlimited | — | **$0** |
 | arXiv API | Unlimited | — | **$0** |
@@ -241,8 +245,8 @@ The `/health` endpoint returns `{"status": "healthy"}` and costs nothing to call
 | platformengineering.org RSS | Unlimited | — | **$0** |
 | Platform Weekly RSS | Unlimited | — | **$0** |
 | cron-job.org | Free | 4,320 pings/month | **$0** |
-| Claude Haiku | $0.80/1M input, $4.00/1M output | ~20 new articles/refresh × 2 refreshes/day | **~$1.70/month** |
-| **TOTAL** | | | **~$1.70/month** |
+| Claude Haiku 4.5 | $1.00/1M input, $5.00/1M output | ~15 new articles/refresh × 2 refreshes/day | **~$1.90/month** |
+| **TOTAL** | | | **~$1.90/month** |
 
 ---
 
@@ -259,6 +263,9 @@ PYTHON_VERSION=3.12.0                  # Pin Python — avoids build failures
 
 # Strongly recommended
 NEWS_API_KEY=...                       # newsapi.org free key (100 req/day)
+
+# Admin approval
+ADMIN_EMAIL=sunnysinghal86@gmail.com    # receives approval emails for new subscribers
 
 # Subscriber seeding — survives ephemeral filesystem restarts
 # Format: "Name1:email1@x.com,Name2:email2@x.com"
