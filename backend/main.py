@@ -82,15 +82,36 @@ app.include_router(config.router, prefix="/api/config", tags=["config"])
 async def refresh_news_job():
     logger.info("News refresh starting...")
     try:
-        articles = await fetch_all_news()
-        logger.info(f"Fetched {len(articles)} articles")
-        articles = await enrich_all(articles)
-        logger.info("Enrichment done")
-        processed = await summarize_articles(articles)
-        logger.info(f"Summarised {len(processed)} articles")
+        # Step 1 — fetch from all 14 sources
+        raw_articles = await fetch_all_news()
+        logger.info(f"Fetched {len(raw_articles)} raw articles from all sources")
+
+        # Step 2 — get IDs already summarised in DB (skip these to save Claude cost)
         async with get_db() as db:
-            await db.upsert_articles(processed)
-        logger.info("News refresh complete")
+            already_seen = await db.get_summarised_ids()
+        logger.info(f"Skipping {len(already_seen)} already-summarised articles")
+
+        # Step 3 — filter to only new/unseen articles
+        new_articles = [a for a in raw_articles if a.id not in already_seen]
+        logger.info(f"New articles to process: {len(new_articles)}")
+
+        if not new_articles:
+            logger.info("No new articles — refresh complete")
+            return
+
+        # Step 4 — enrich content (trafilatura, no API cost)
+        new_articles = await enrich_all(new_articles)
+
+        # Step 5 — send to Claude (capped at 30 per refresh)
+        processed = await summarize_articles(new_articles)
+        logger.info(f"Summarised {len(processed)} articles")
+
+        # Step 6 — upsert into DB (ON CONFLICT updates existing)
+        if processed:
+            async with get_db() as db:
+                await db.upsert_articles(processed)
+            logger.info(f"Stored {len(processed)} articles — refresh complete")
+
     except Exception as e:
         logger.error(f"News refresh failed: {e}", exc_info=True)
 
