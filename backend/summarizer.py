@@ -186,21 +186,33 @@ async def _analyse_article(article: RawArticle, session: aiohttp.ClientSession) 
         f"Title: {article.title}\n"
         f"Source: {article.source}\n"
         f"Content: {content_text}\n\n"
-        "Rules:\n"
-        "- is_product_or_tool = true for ANY tool, library, framework, platform, model, API, or service\n"
-        "- If is_product_or_tool is true, you MUST include 2-3 real named competitors — use your knowledge if content is sparse\n"
-        "- competitive_advantage must always be filled if is_product_or_tool is true — never leave blank\n"
-        "- relevance_score: 8-10 for platform eng/MLOps/AI infra, 5-7 general AI news, 1-4 unrelated\n\n"
-        "Return exactly this JSON:\n"
+        "CATEGORY RULES — pick exactly one:\n"
+        "  Product/Tool        → any SDK, library, framework, CLI, platform, SaaS, or developer tool\n"
+        "  AI Model            → a new or updated LLM, image model, embedding model, or AI system\n"
+        "  Research Paper      → academic paper, preprint, or technical study\n"
+        "  Tutorial/Guide      → how-to, walkthrough, best practices, or engineering guide\n"
+        "  Platform/Infrastructure → cloud infra, MLOps pipeline, deployment, observability, or DevOps tooling\n"
+        "  Industry News       → ONLY use this for company news, funding, acquisitions, or opinion pieces\n\n"
+        "IS_PRODUCT_OR_TOOL RULES:\n"
+        "  Set true if category is Product/Tool, AI Model, OR Platform/Infrastructure\n"
+        "  Set false only for Research Paper, Tutorial/Guide, or Industry News\n"
+        "  If true: MUST include 2-3 real named competitors (use your training knowledge if article is sparse)\n"
+        "  If true: competitive_advantage must be a specific one-sentence differentiator — never generic\n\n"
+        "RELEVANCE SCORE:\n"
+        "  9-10 → direct impact on AI/ML infra, MLOps, platform engineering, or developer tooling\n"
+        "  7-8  → significant model release or widely-used framework update\n"
+        "  5-6  → interesting AI news relevant to engineers\n"
+        "  1-4  → general tech news with weak AI/engineering relevance\n\n"
+        "Return exactly this JSON (no extra fields, no markdown):\n"
         "{\n"
-        '"  \"summary\": \"2-3 sentences for software/platform engineers, be specific\",\n"'
-        '"  \"category\": \"Product/Tool | AI Model | Research Paper | Industry News | Tutorial/Guide | Platform/Infrastructure\",\n"'
+        '"  \"summary\": \"2-3 sentences for software/platform engineers — be specific about what changed and why it matters\",\n"'
+        '"  \"category\": \"<exactly one of: Product/Tool, AI Model, Research Paper, Industry News, Tutorial/Guide, Platform/Infrastructure>\",\n"'
         '"  \"tags\": [\"tag1\", \"tag2\", \"tag3\"],\n"'
         '"  \"relevance_score\": <integer 1-10>,\n"'
-        '"  \"is_product_or_tool\": <true or false>,\n"'
-        '"  \"product_name\": \"<product name or empty string>\",\n"'
-        '"  \"competitors\": [{\"name\": \"Real Name\", \"description\": \"what they do\", \"comparison\": \"how this differs\"}],\n"'
-        '"  \"competitive_advantage\": \"<one sentence key differentiator — required for all products>\"\n"'
+        '"  \"is_product_or_tool\": <true if Product/Tool, AI Model, or Platform/Infrastructure — else false>,\n"'
+        '"  \"product_name\": \"<product or model name — empty string if not a product>\",\n"'
+        '"  \"competitors\": [{\"name\": \"Real Competitor Name\", \"description\": \"what they do\", \"comparison\": \"specific way this differs\"}],\n"'
+        '"  \"competitive_advantage\": \"<specific differentiator — required if is_product_or_tool is true>\"\n"'
         "}"
     )
 
