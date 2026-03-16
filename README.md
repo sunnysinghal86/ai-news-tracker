@@ -4,7 +4,7 @@
 
 ### The Intelligence Briefing for AI Engineers
 
-*Tracks AI/ML news across Hacker News · arXiv · NewsAPI · Medium · platformengineering.org · Platform Weekly*  
+*Tracks AI/ML news across 14 sources — Hacker News · arXiv · NewsAPI · Medium · Anthropic · OpenAI · DeepMind · AWS · VentureBeat · TechCrunch and more*  
 *Claude-powered summaries · Competitor analysis · Daily email digest*
 
 ---
@@ -19,7 +19,7 @@
 
 > **Every morning you open seven tabs, skim thirty headlines, and still feel like you missed something.**
 
-AI Signal fixes that. One beautifully designed briefing lands in your inbox at 8 AM — curated from six sources engineers actually read, summarised by Claude, scored for relevance to *your* stack, and enriched with competitive intelligence on every new tool or model that matters.
+AI Signal fixes that. One beautifully designed briefing lands in your inbox at 8 AM — curated from 14 sources engineers actually read, summarised by Claude, scored for relevance to *your* stack, and enriched with competitive intelligence on every new tool or model that matters.
 
 It's not a newsletter you subscribed to and forgot. It's infrastructure you own.
 
@@ -43,7 +43,7 @@ It's not a newsletter you subscribed to and forgot. It's infrastructure you own.
 
 | Feature | Details |
 |---|---|
-| **6 Sources** | Hacker News, arXiv, NewsAPI, Medium, platformengineering.org, Platform Weekly |
+| **14 Sources** | Hacker News, arXiv, NewsAPI, Medium, platformengineering.org, Platform Weekly, Anthropic Blog, OpenAI Blog, Google DeepMind, Google Research, AWS AI Blog, VentureBeat AI, TechCrunch AI, The Gradient |
 | **Claude Haiku Summaries** | 2–3 sentence digest per article — powered by full article body extraction via trafilatura |
 | **Competitor Analysis** | For every product/tool/model: lists rivals + *how this one differs* |
 | **Relevance Scoring** | 1–10 score weighted toward Software Dev & Platform Engineering |
@@ -244,9 +244,17 @@ The `/health` endpoint returns `{"status": "healthy"}` and costs nothing to call
 | Medium RSS (rss2json) | 10k req/month | ~720 | **$0** |
 | platformengineering.org RSS | Unlimited | — | **$0** |
 | Platform Weekly RSS | Unlimited | — | **$0** |
+| Anthropic Blog RSS | Unlimited | — | **$0** |
+| OpenAI Blog RSS | Unlimited | — | **$0** |
+| Google DeepMind RSS | Unlimited | — | **$0** |
+| Google Research RSS | Unlimited | — | **$0** |
+| AWS AI Blog RSS | Unlimited | — | **$0** |
+| VentureBeat AI RSS | Unlimited | — | **$0** |
+| TechCrunch AI RSS | Unlimited | — | **$0** |
+| The Gradient RSS | Unlimited | — | **$0** |
 | cron-job.org | Free | 4,320 pings/month | **$0** |
-| Claude Haiku 4.5 | $1.00/1M input, $5.00/1M output | ~15 new articles/refresh × 2 refreshes/day | **~$1.90/month** |
-| **TOTAL** | | | **~$1.90/month** |
+| Claude Haiku 4.5 | $1.00/1M input, $5.00/1M output | ~28–30 new articles/day (cap enforced) | **~$2.50/month** |
+| **TOTAL** | | | **~$2.50/month** |
 
 ---
 
@@ -407,6 +415,8 @@ AI               Anthropic Claude Haiku (claude-haiku-4-5-20251001)
 Email            Resend API (free tier: 3,000/month)
 Database         SQLite on /tmp — ephemeral, zero ops
 News Sources     HN Algolia · arXiv · NewsAPI · Medium RSS · platformengineering.org · Platform Weekly
+                 Anthropic Blog · OpenAI Blog · Google DeepMind · Google Research · AWS AI Blog
+                 VentureBeat AI · TechCrunch AI · The Gradient
 Article Extract  trafilatura (full body) → og:description fallback → raw RSS snippet
 Frontend         React 18 · Vite · Custom editorial CSS (no component library)
 Typography       Playfair Display · Source Serif 4 · Barlow Condensed
