@@ -61,12 +61,23 @@ const CAT_ICON = {
   "Industry News": "◆", "Tutorial/Guide": "▶", "Platform/Infrastructure": "▣",
 };
 const SRC_STYLE = {
+  // Original sources
   "Hacker News":             { bg: "#c0392b", label: "HN" },
   "arXiv":                   { bg: "#1a3a5c", label: "arXiv" },
   "Medium":                  { bg: "#1a1208", label: "Medium" },
   "NewsAPI":                 { bg: "#b5860d", label: "News" },
   "platformengineering.org": { bg: "#1c4d35", label: "PE.org" },
-  "Platform Weekly":         { bg: "#1c4d35", label: "PW" },
+  "Platform Weekly":         { bg: "#2d5a3d", label: "PW" },
+  // New sources — company blogs
+  "Anthropic Blog":          { bg: "#c17f2a", label: "Anthropic" },
+  "OpenAI Blog":             { bg: "#1a6b4a", label: "OpenAI" },
+  "Google DeepMind":         { bg: "#1558a0", label: "DeepMind" },
+  "Google Research":         { bg: "#1558a0", label: "G.Research" },
+  "AWS AI Blog":             { bg: "#8a3a00", label: "AWS" },
+  // New sources — industry news
+  "VentureBeat AI":          { bg: "#5a2d82", label: "VB" },
+  "TechCrunch AI":           { bg: "#005a8a", label: "TC" },
+  "The Gradient":            { bg: "#3a3a3a", label: "Gradient" },
 };
 function srcFor(s) {
   const k = Object.keys(SRC_STYLE).find(k => s?.includes(k)) || "NewsAPI";
@@ -362,9 +373,23 @@ export default function App() {
   const { data: cfg }                    = useApi("/api/config");
 
   const articles  = news?.articles || [];
-  const lead      = articles[0];
-  const mainCol   = articles.slice(1, 11);
-  const sideCol   = articles.slice(11);
+  // Split articles by actual category into two editorially meaningful columns:
+  // Left — Products, Tools & Industry: hands-on engineering content + industry/company news
+  // Right — Research & Models: scientific papers, model releases, academic content
+  const PLATFORM_CATS = new Set([
+    "Product/Tool", "Tutorial/Guide", "Platform/Infrastructure", "Industry News"
+  ]);
+  const RESEARCH_CATS = new Set([
+    "AI Model", "Research Paper"
+  ]);
+
+  const platformArticles = articles.filter(a => PLATFORM_CATS.has(a.category));
+  const researchArticles  = articles.filter(a => RESEARCH_CATS.has(a.category));
+
+  // Lead story: highest relevance score overall (first article, already sorted by API)
+  const lead    = articles[0];
+  const mainCol = platformArticles.filter(a => a.id !== lead?.id).slice(0, 12);
+  const sideCol = researchArticles.filter(a => a.id !== lead?.id).slice(0, 10);
 
   const doRefresh = async () => {
     setRefreshing(true);
@@ -446,7 +471,7 @@ export default function App() {
                 style={{ flex: "1 1 180px", padding: "7px 0", border: "none", borderBottom: `2px solid ${T.ink}`, background: "transparent", color: T.ink, fontSize: "13px", outline: "none", fontFamily: "Georgia, serif" }} />
               {[
                 { k: "category", opts: ["Product/Tool","AI Model","Research Paper","Industry News","Tutorial/Guide","Platform/Infrastructure"], ph: "All sections" },
-                { k: "source",   opts: ["Hacker News","arXiv","Medium","NewsAPI","platformengineering.org","Platform Weekly"], ph: "All sources" },
+                { k: "source",   opts: ["Hacker News","arXiv","Medium","NewsAPI","platformengineering.org","Platform Weekly","Anthropic Blog","OpenAI Blog","Google DeepMind","Google Research","AWS AI Blog","VentureBeat AI","TechCrunch AI","The Gradient"], ph: "All sources" },
               ].map(({ k, opts, ph }) => (
                 <select key={k} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))}
                   style={{ padding: "7px 4px", border: "none", borderBottom: `2px solid ${filters[k] ? T.ink : T.rule}`, background: "transparent", color: filters[k] ? T.ink : T.muted, fontSize: "12px", cursor: "pointer", outline: "none", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.06em" }}>
@@ -499,7 +524,7 @@ export default function App() {
                 {/* Two-column grid */}
                 <div style={{ display: "grid", gridTemplateColumns: "minmax(0,2fr) minmax(0,1fr)", gap: "0 36px" }}>
                   <div style={{ borderRight: `1px solid ${T.rule}`, paddingRight: "36px" }}>
-                    <div style={{ padding: "10px 0 12px" }}><Stamp>Platform &amp; Tooling</Stamp></div>
+                    <div style={{ padding: "10px 0 12px" }}><Stamp>Products &amp; Industry</Stamp></div>
                     <Rule my={8} />
                     {mainCol.map(a => (
                       <ArticleCard key={a.id} article={a} expanded={expandedId === a.id} onToggle={() => setExpandedId(expandedId === a.id ? null : a.id)} />
