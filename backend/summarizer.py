@@ -142,7 +142,7 @@ async def _call_claude(prompt: str, session: aiohttp.ClientSession, retries: int
 
     payload = {
         "model": "claude-haiku-4-5-20251001",
-        "max_tokens": 450,  # 450 sufficient for compact JSON schema
+        "max_tokens": 550,  # 550 — cutoff was at ~425, need headroom for longer articles
         "system": SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": prompt}],
     }

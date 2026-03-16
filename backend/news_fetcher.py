@@ -289,9 +289,9 @@ PLATFORM_RSS_FEEDS = [
 # ── New AI news RSS sources ───────────────────────────────────────────────────
 AI_NEWS_RSS_FEEDS = [
     # Company blogs — catch every model/product release on day one
-    ("https://www.anthropic.com/rss.xml",                   "Anthropic Blog"),
+    ("https://www.anthropic.com/index.xml",                 "Anthropic Blog"),
     ("https://openai.com/news/rss.xml",                     "OpenAI Blog"),
-    ("https://deepmind.google/blog/rss",                    "Google DeepMind"),
+    ("https://deepmind.google/discover/blog/rss",           "Google DeepMind"),
     ("https://research.google/blog/rss",                    "Google Research"),
     ("https://aws.amazon.com/blogs/machine-learning/feed/", "AWS AI Blog"),
     # Industry coverage — product launches, funding, analysis
@@ -382,6 +382,8 @@ async def fetch_ai_news_rss(session: aiohttp.ClientSession) -> List[RawArticle]:
                 continue
 
             count = 0
+            cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+
             for entry in feed.entries:
                 title   = fix_encoding(entry.get("title", "").replace("\n", " ")).strip()
                 summary = fix_encoding(strip_html(
@@ -392,16 +394,20 @@ async def fetch_ai_news_rss(session: aiohttp.ClientSession) -> List[RawArticle]:
                 if not title or not url:
                     continue
 
+                try:
+                    published = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
+                except Exception:
+                    published = datetime.now(timezone.utc)
+
+                # Skip articles older than 30 days — prevents archive dumps (e.g. OpenAI 886 articles)
+                if published < cutoff:
+                    continue
+
                 # Company blogs are always relevant — skip keyword filter
                 # Industry sources (VentureBeat, TechCrunch etc) must pass keyword check
                 if source_name not in ALWAYS_RELEVANT:
                     if not is_relevant(title, summary):
                         continue
-
-                try:
-                    published = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
-                except Exception:
-                    published = datetime.now(timezone.utc)
 
                 articles.append(RawArticle(
                     id=gen_id(url),
