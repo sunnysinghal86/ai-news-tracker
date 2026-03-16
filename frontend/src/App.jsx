@@ -369,7 +369,7 @@ export default function App() {
 
   const { data: news, loading, refetch } = useApi("/api/news", { limit: 40, ...filters });
   const { data: stats }                  = useApi("/api/news/stats");
-  const { data: usersData }              = useApi("/api/users");
+  const { data: usersData, refetch: refetchUsers } = useApi("/api/users");
   const { data: cfg }                    = useApi("/api/config");
 
   const articles  = news?.articles || [];
@@ -564,7 +564,7 @@ export default function App() {
           <div style={{ maxWidth: "700px", paddingTop: "28px" }}>
             <DoubleRule my={0} />
             <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: "28px", margin: "18px 0 4px" }}>Subscriber Registry</h2>
-            <p style={{ color: T.muted, fontSize: "13px", margin: "0 0 20px", fontFamily: "Georgia, serif" }}>Daily digest sent at 08:00 UTC. Capacity: 20 subscribers.</p>
+            <p style={{ color: T.muted, fontSize: "13px", margin: "0 0 20px", fontFamily: "Georgia, serif" }}>Daily digest sent at 08:00 UTC. Capacity: 75 subscribers.</p>
             <Rule />
             {(usersData?.users || []).length === 0 ? (
               <p style={{ color: T.muted, fontFamily: "Georgia, serif", fontStyle: "italic" }}>No subscribers yet.</p>
@@ -572,7 +572,7 @@ export default function App() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
-                    {["Name", "Email", "Min Relevance", "Sections"].map(h => (
+                    {["Name", "Email", "Min Relevance", "Sections", ""].map(h => (
                       <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontSize: "9px", color: T.muted, letterSpacing: "0.15em", textTransform: "uppercase", borderBottom: `2px solid ${T.ink}`, fontFamily: "'Barlow Condensed', sans-serif" }}>{h}</th>
                     ))}
                   </tr>
@@ -584,6 +584,18 @@ export default function App() {
                       <td style={{ padding: "10px", fontSize: "12px", color: T.muted }}>{u.email}</td>
                       <td style={{ padding: "10px" }}><Stars score={u.min_relevance} /></td>
                       <td style={{ padding: "10px", fontSize: "11px", color: T.muted }}>{u.categories?.join(", ") || "All"}</td>
+                      <td style={{ padding: "10px", textAlign: "right" }}>
+                        <button
+                          onClick={async () => {
+                            if (!window.confirm(`Remove ${u.name} (${u.email}) from digest?`)) return;
+                            await fetch(`${API_BASE}/api/users/${encodeURIComponent(u.email)}`, { method: "DELETE" });
+                            refetchUsers();
+                          }}
+                          style={{ padding: "4px 10px", fontSize: "10px", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 700, background: "transparent", color: "#c0392b", border: "1px solid #c0392b", cursor: "pointer" }}
+                        >
+                          Remove
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -609,7 +621,7 @@ export default function App() {
 
       {subOk && (
         <div style={{ position: "fixed", bottom: "24px", left: "50%", transform: "translateX(-50%)", background: T.ink, color: T.paper, padding: "14px 24px", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "13px", letterSpacing: "0.1em", zIndex: 300, borderLeft: `4px solid ${T.green}`, boxShadow: "0 8px 32px rgba(0,0,0,0.25)" }}>
-          ✓ SUBSCRIBED — FIRST DIGEST ARRIVES TOMORROW AT 08:00 UTC
+          ✓ REQUEST RECEIVED — PENDING ADMIN APPROVAL
         </div>
       )}
     </div>
