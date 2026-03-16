@@ -99,14 +99,23 @@ async def refresh_news_job():
             logger.info("No new articles — refresh complete")
             return
 
-        # Step 4 — enrich content (trafilatura, no API cost)
-        new_articles = await enrich_all(new_articles)
+        # Step 4 — cap BEFORE enriching (no point enriching articles we won't send to Claude)
+        cap = 20
+        if len(new_articles) > cap:
+            # Sort by score desc so we enrich + analyse the best articles first
+            new_articles.sort(key=lambda a: a.score, reverse=True)
+            new_articles = new_articles[:cap]
+            logger.info(f"Capped to top {cap} articles by score")
 
-        # Step 5 — send to Claude (capped at 30 per refresh)
+        # Step 5 — enrich content only for capped set (trafilatura, no API cost)
+        new_articles = await enrich_all(new_articles)
+        logger.info(f"Enrichment done for {len(new_articles)} articles")
+
+        # Step 6 — send to Claude
         processed = await summarize_articles(new_articles)
         logger.info(f"Summarised {len(processed)} articles")
 
-        # Step 6 — upsert into DB (ON CONFLICT updates existing)
+        # Step 7 — upsert into DB
         if processed:
             async with get_db() as db:
                 await db.upsert_articles(processed)

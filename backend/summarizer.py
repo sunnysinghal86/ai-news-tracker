@@ -142,7 +142,7 @@ async def _call_claude(prompt: str, session: aiohttp.ClientSession, retries: int
 
     payload = {
         "model": "claude-haiku-4-5-20251001",
-        "max_tokens": 300,  # 300 × 16/min = 5000 tokens/min — well under 10k limit
+        "max_tokens": 450,  # 450 sufficient for compact JSON schema
         "system": SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": prompt}],
     }
@@ -182,38 +182,22 @@ async def _call_claude(prompt: str, session: aiohttp.ClientSession, retries: int
 async def _analyse_article(article: RawArticle, session: aiohttp.ClientSession) -> ProcessedArticle:
     content_text = (article.content or "")[:1200]
     prompt = (
-        "Analyse this AI/tech article and return ONLY valid JSON. No markdown, no explanation.\n\n"
-        f"Title: {article.title}\n"
-        f"Source: {article.source}\n"
-        f"Content: {content_text}\n\n"
-        "CATEGORY RULES — pick exactly one:\n"
-        "  Product/Tool        → any SDK, library, framework, CLI, platform, SaaS, or developer tool\n"
-        "  AI Model            → a new or updated LLM, image model, embedding model, or AI system\n"
-        "  Research Paper      → academic paper, preprint, or technical study\n"
-        "  Tutorial/Guide      → how-to, walkthrough, best practices, or engineering guide\n"
-        "  Platform/Infrastructure → cloud infra, MLOps pipeline, deployment, observability, or DevOps tooling\n"
-        "  Industry News       → ONLY use this for company news, funding, acquisitions, or opinion pieces\n\n"
-        "IS_PRODUCT_OR_TOOL RULES:\n"
-        "  Set true if category is Product/Tool, AI Model, OR Platform/Infrastructure\n"
-        "  Set false only for Research Paper, Tutorial/Guide, or Industry News\n"
-        "  If true: MUST include 2-3 real named competitors (use your training knowledge if article is sparse)\n"
-        "  If true: competitive_advantage must be a specific one-sentence differentiator — never generic\n\n"
-        "RELEVANCE SCORE:\n"
-        "  9-10 → direct impact on AI/ML infra, MLOps, platform engineering, or developer tooling\n"
-        "  7-8  → significant model release or widely-used framework update\n"
-        "  5-6  → interesting AI news relevant to engineers\n"
-        "  1-4  → general tech news with weak AI/engineering relevance\n\n"
-        "Return exactly this JSON (no extra fields, no markdown):\n"
-        "{\n"
-        '"  \"summary\": \"2-3 sentences for software/platform engineers — be specific about what changed and why it matters\",\n"'
-        '"  \"category\": \"<exactly one of: Product/Tool, AI Model, Research Paper, Industry News, Tutorial/Guide, Platform/Infrastructure>\",\n"'
-        '"  \"tags\": [\"tag1\", \"tag2\", \"tag3\"],\n"'
-        '"  \"relevance_score\": <integer 1-10>,\n"'
-        '"  \"is_product_or_tool\": <true if Product/Tool, AI Model, or Platform/Infrastructure — else false>,\n"'
-        '"  \"product_name\": \"<product or model name — empty string if not a product>\",\n"'
-        '"  \"competitors\": [{\"name\": \"Real Competitor Name\", \"description\": \"what they do\", \"comparison\": \"specific way this differs\"}],\n"'
-        '"  \"competitive_advantage\": \"<specific differentiator — required if is_product_or_tool is true>\"\n"'
-        "}"
+        "Analyse this AI/tech article. Return ONLY valid JSON, no markdown.\n"
+        f"Title: {article.title}\nSource: {article.source}\nContent: {content_text}\n\n"
+        "Categories: Product/Tool=SDK/library/framework/CLI/SaaS; AI Model=LLM/image/embedding model; "
+        "Research Paper=academic/preprint; Tutorial/Guide=how-to/guide; "
+        "Platform/Infrastructure=MLOps/deployment/cloud-AI; Industry News=funding/acquisitions/opinion only\n"
+        "is_product_or_tool=true for Product/Tool, AI Model, Platform/Infrastructure; "
+        "if true include 2-3 named competitors + specific competitive_advantage\n"
+        "relevance: 9-10=AI infra/MLOps/platform-eng, 7-8=major model/framework, 5-6=AI news, 1-4=weak\n\n"
+        '{"summary":"2-3 eng-focused sentences",'
+        '"category":"<one of the 6 above>",'
+        '"tags":["t1","t2","t3"],'
+        '"relevance_score":<1-10>,'
+        '"is_product_or_tool":<bool>,'
+        '"product_name":"<name or empty>",'
+        '"competitors":[{"name":"X","description":"Y","comparison":"Z"}],'
+        '"competitive_advantage":"<differentiator>"}'
     )
 
     base = ProcessedArticle(
@@ -278,17 +262,18 @@ async def summarize_articles(articles: List[RawArticle], max_concurrent: int = 1
             for a in articles
         ]
 
-    # Cap at 30 articles per refresh to stay within token/min rate limits
+    # Cap is now applied in main.py before enrichment — articles arriving here
+    # are already the top 30 by score. Log a warning if somehow more arrive.
     if len(articles) > 30:
-        logger.info(f"Capping articles from {len(articles)} to 30 to avoid rate limits")
+        logger.warning(f"Received {len(articles)} articles — expected max 30. Capping.")
         articles = articles[:30]
 
     sem = asyncio.Semaphore(max_concurrent)
-    timeout = aiohttp.ClientTimeout(total=300)  # 5 min total — enough for 30 articles with backoff
+    timeout = aiohttp.ClientTimeout(total=400)  # ~6.5 min — 30 articles × 4s + Claude latency buffer
 
     async def bounded(art: RawArticle, session: aiohttp.ClientSession, idx: int = 0) -> ProcessedArticle:
         async with sem:
-            # Fixed 4s gap between calls: 300 tokens × 15/min = 4,500 tokens/min (under 10k limit)
+            # Fixed 4s gap between calls: 600 tokens × 15/min = 9,000 tokens/min (under 10k limit)
             if idx > 0:
                 await asyncio.sleep(4)
             return await _analyse_article(art, session)
