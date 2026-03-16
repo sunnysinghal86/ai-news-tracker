@@ -28,7 +28,14 @@ AI_KEYWORDS = [
     "kubernetes AI", "cloud AI", "AI observability", "AI gateway",
     "openai", "anthropic", "mistral", "cohere", "hugging face",
     "langchain", "llamaindex", "dspy", "crewai", "autogen",
-    "platform engineering", "developer platform", "AI tooling", "AI SDK"
+    "platform engineering", "developer platform", "AI tooling", "AI SDK",
+    # New model/product launch terms (important for new sources)
+    "model release", "benchmark", "multimodal", "reasoning model",
+    "o1", "o3", "claude 3", "claude 4", "gpt-4", "gpt-5", "gemini 2",
+    "diffusion model", "text-to-image", "text-to-video", "AI startup",
+    "series a", "series b", "raises", "launches", "announces", "unveils",
+    "bedrock", "sagemaker", "vertex ai", "azure ai", "AI safety",
+    "context window", "tokens", "open source model", "weights"
 ]
 
 @dataclass
@@ -279,6 +286,22 @@ PLATFORM_RSS_FEEDS = [
     ("https://newsletter.platformengineering.org/feed", "Platform Weekly"),
 ]
 
+# ── New AI news RSS sources ───────────────────────────────────────────────────
+AI_NEWS_RSS_FEEDS = [
+    # Company blogs — catch every model/product release on day one
+    ("https://www.anthropic.com/rss.xml",                   "Anthropic Blog"),
+    ("https://openai.com/news/rss.xml",                     "OpenAI Blog"),
+    ("https://deepmind.google/blog/rss",                    "Google DeepMind"),
+    ("https://research.google/blog/rss",                    "Google Research"),
+    ("https://aws.amazon.com/blogs/machine-learning/feed/", "AWS AI Blog"),
+    # Industry coverage — product launches, funding, analysis
+    ("https://venturebeat.com/category/ai/feed/",           "VentureBeat AI"),
+    ("https://techcrunch.com/category/artificial-intelligence/feed/", "TechCrunch AI"),
+    # Research explainers for engineers
+    ("https://thegradient.pub/rss/",                        "The Gradient"),
+]
+
+
 async def fetch_platform_sources(session: aiohttp.ClientSession) -> List[RawArticle]:
     """Fetch from platformengineering.org and Platform Weekly RSS"""
     articles = []
@@ -329,6 +352,78 @@ async def fetch_platform_sources(session: aiohttp.ClientSession) -> List[RawArti
 
     return articles
 
+async def fetch_ai_news_rss(session: aiohttp.ClientSession) -> List[RawArticle]:
+    """
+    Fetch from company blogs and AI industry news RSS feeds.
+    Covers: Anthropic, OpenAI, Google DeepMind, Google Research,
+            AWS AI Blog, VentureBeat AI, TechCrunch AI, The Gradient.
+
+    Uses is_relevant() keyword filter on all sources except company blogs
+    (Anthropic/OpenAI/DeepMind/Google Research are always AI-relevant).
+    """
+    ALWAYS_RELEVANT = {"Anthropic Blog", "OpenAI Blog", "Google DeepMind", "Google Research"}
+    articles = []
+
+    for feed_url, source_name in AI_NEWS_RSS_FEEDS:
+        try:
+            async with session.get(
+                feed_url,
+                timeout=aiohttp.ClientTimeout(total=12),
+                headers={"User-Agent": "Mozilla/5.0 (compatible; AISignalBot/1.0)"},
+            ) as resp:
+                if resp.status != 200:
+                    logger.warning(f"{source_name} returned HTTP {resp.status}")
+                    continue
+                text = await resp.text()
+
+            feed = feedparser.parse(text)
+            if not feed.entries:
+                logger.warning(f"{source_name}: no entries in feed")
+                continue
+
+            count = 0
+            for entry in feed.entries:
+                title   = fix_encoding(entry.get("title", "").replace("\n", " ")).strip()
+                summary = fix_encoding(strip_html(
+                    entry.get("summary", "") or entry.get("description", "") or ""
+                ))
+                url = entry.get("link", "")
+
+                if not title or not url:
+                    continue
+
+                # Company blogs are always relevant — skip keyword filter
+                # Industry sources (VentureBeat, TechCrunch etc) must pass keyword check
+                if source_name not in ALWAYS_RELEVANT:
+                    if not is_relevant(title, summary):
+                        continue
+
+                try:
+                    published = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
+                except Exception:
+                    published = datetime.now(timezone.utc)
+
+                articles.append(RawArticle(
+                    id=gen_id(url),
+                    title=title,
+                    url=url,
+                    source=source_name,
+                    published_at=published,
+                    content=summary[:600],
+                    author=fix_encoding(entry.get("author", "")),
+                    tags=["ai-news"],
+                    score=0,
+                ))
+                count += 1
+
+            logger.info(f"{source_name}: {count} articles")
+
+        except Exception as e:
+            logger.warning(f"{source_name} fetch error: {e}")
+
+    return articles
+
+
 # ─────────────────────────────────────────────
 # MAIN AGGREGATOR
 # ─────────────────────────────────────────────
@@ -344,6 +439,7 @@ async def fetch_all_news() -> List[RawArticle]:
             fetch_newsapi(session),
             fetch_medium(session),
             fetch_platform_sources(session),
+            fetch_ai_news_rss(session),       # NEW: company blogs + industry news
             return_exceptions=True
         )
     
