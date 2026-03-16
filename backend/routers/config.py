@@ -15,10 +15,13 @@ async def get_config():
         "resend_configured":      bool(os.getenv("RESEND_API_KEY")),
         "refresh_interval_hours": 1,
         "digest_time_utc":        "08:00",
-        "max_users":              20,
+        "max_users":              100,
         "sources": [
             "Hacker News", "arXiv", "Medium", "NewsAPI",
-            "platformengineering.org", "Platform Weekly"
+            "platformengineering.org", "Platform Weekly",
+            "Anthropic Blog", "OpenAI Blog", "Google DeepMind",
+            "Google Research", "AWS AI Blog",
+            "VentureBeat AI", "TechCrunch AI", "The Gradient",
         ],
     }
 

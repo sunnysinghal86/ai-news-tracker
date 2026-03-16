@@ -37,5 +37,14 @@ async def get_categories():
 @router.get("/sources")
 async def get_sources():
     return {
-        "sources": ["Hacker News", "arXiv", "Medium", "NewsAPI"]
+        "sources": [
+            # Original
+            "Hacker News", "arXiv", "Medium", "NewsAPI",
+            "platformengineering.org", "Platform Weekly",
+            # New — company blogs
+            "Anthropic Blog", "OpenAI Blog", "Google DeepMind",
+            "Google Research", "AWS AI Blog",
+            # New — industry news
+            "VentureBeat AI", "TechCrunch AI", "The Gradient",
+        ]
     }
