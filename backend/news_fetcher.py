@@ -296,7 +296,7 @@ PLATFORM_RSS_FEEDS = [
 # ── New AI news RSS sources ───────────────────────────────────────────────────
 AI_NEWS_RSS_FEEDS = [
     # Company blogs — catch every model/product release on day one
-    ("https://raw.githubusercontent.com/Olshansk/rss-feeds/main/feed_anthropic_news.xml", "Anthropic Blog"),
+    ("https://raw.githubusercontent.com/Olshansk/rss-feeds/main/feeds/feed_anthropic_news.xml", "Anthropic Blog"),
     ("https://openai.com/news/rss.xml",                     "OpenAI Blog"),
     ("https://deepmind.google/blog/rss.xml",                "Google DeepMind"),
     ("https://research.google/blog/rss",                    "Google Research"),
@@ -304,7 +304,7 @@ AI_NEWS_RSS_FEEDS = [
     ("https://blog.google/technology/ai/rss/",              "Google AI Blog"),
     ("https://news.mit.edu/rss/topic/artificial-intelligence2", "MIT AI News"),
     # Industry coverage — product launches, funding, analysis
-    ("https://venturebeat.com/category/ai/feed/",           "VentureBeat AI"),
+    ("https://www.theverge.com/ai-artificial-intelligence/rss/index.xml", "The Verge AI"),
     ("https://techcrunch.com/category/artificial-intelligence/feed/", "TechCrunch AI"),
     # Research explainers for engineers
     ("https://thegradient.pub/rss/",                        "The Gradient"),
@@ -370,7 +370,7 @@ async def fetch_ai_news_rss(session: aiohttp.ClientSession) -> List[RawArticle]:
     Uses is_relevant() keyword filter on all sources except company blogs
     (Anthropic/OpenAI/DeepMind/Google Research are always AI-relevant).
     """
-    ALWAYS_RELEVANT = {"Anthropic Blog", "OpenAI Blog", "Google DeepMind", "Google Research"}
+    ALWAYS_RELEVANT = {"Anthropic Blog", "OpenAI Blog", "Google DeepMind", "Google Research", "Google AI Blog"}
     articles = []
 
     for feed_url, source_name in AI_NEWS_RSS_FEEDS:
