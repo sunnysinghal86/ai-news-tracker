@@ -77,7 +77,8 @@ const SRC_STYLE = {
   // New sources — industry news
   "The Verge AI":            { bg: "#5a2d82", label: "Verge" },
   "TechCrunch AI":           { bg: "#005a8a", label: "TC" },
-  "The Gradient":            { bg: "#3a3a3a", label: "Gradient" },
+  "Wired AI":                { bg: "#3a3a3a", label: "Wired" },
+  "Ars Technica":            { bg: "#2c4a1e", label: "Ars" },
 };
 function srcFor(s) {
   const k = Object.keys(SRC_STYLE).find(k => s?.includes(k)) || "NewsAPI";
@@ -474,7 +475,7 @@ export default function App() {
                 style={{ flex: "1 1 180px", padding: "7px 0", border: "none", borderBottom: `2px solid ${T.ink}`, background: "transparent", color: T.ink, fontSize: "13px", outline: "none", fontFamily: "Georgia, serif" }} />
               {[
                 { k: "category", opts: ["Product/Tool","AI Model","Research Paper","Industry News","Tutorial/Guide","Platform/Infrastructure"], ph: "All sections" },
-                { k: "source",   opts: ["Hacker News","arXiv","Medium","NewsAPI","platformengineering.org","Platform Weekly","Anthropic Blog","OpenAI Blog","Google DeepMind","Google Research","AWS AI Blog","The Verge AI","TechCrunch AI","The Gradient"], ph: "All sources" },
+                { k: "source",   opts: ["Hacker News","arXiv","Medium","NewsAPI","platformengineering.org","Platform Weekly","Anthropic Blog","OpenAI Blog","Google DeepMind","Google Research","AWS AI Blog","The Verge AI","TechCrunch AI","Wired AI","Ars Technica"], ph: "All sources" },
               ].map(({ k, opts, ph }) => (
                 <select key={k} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))}
                   style={{ padding: "7px 4px", border: "none", borderBottom: `2px solid ${filters[k] ? T.ink : T.rule}`, background: "transparent", color: filters[k] ? T.ink : T.muted, fontSize: "12px", cursor: "pointer", outline: "none", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.06em" }}>
