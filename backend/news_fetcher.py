@@ -38,6 +38,70 @@ AI_KEYWORDS = [
     "context window", "tokens", "open source model", "weights"
 ]
 
+# ── High-value keywords that signal product launches / model releases ──────────
+HIGH_SIGNAL_KEYWORDS = [
+    "launches", "releases", "announces", "unveils", "introduces",
+    "new model", "new version", "open source", "open-source",
+    "beats", "outperforms", "state of the art", "sota",
+    "gpt-4", "gpt-5", "claude", "gemini", "llama", "mistral",
+    "agent", "multimodal", "reasoning", "benchmark",
+    "raises", "funding", "series", "acquired",
+]
+
+# ── Source quality weights ─────────────────────────────────────────────────────
+SOURCE_QUALITY = {
+    # Company blogs — highest signal, always relevant
+    "Anthropic Blog":          10,
+    "OpenAI Blog":             10,
+    "Google DeepMind":         10,
+    "Google AI Blog":           9,
+    "Google Research":          9,
+    "AWS AI Blog":              8,
+    # Research
+    "arXiv":                    8,
+    "MIT AI News":              7,
+    # Community / editorial
+    "Medium":                   5,
+    # Industry news — good signal
+    "NewsAPI":                  5,
+    # Community
+    "Medium":                   5,
+    # Platform engineering
+    "platformengineering.org":  6,
+}
+
+def quality_score(article: "RawArticle") -> float:
+    """
+    Compute a quality score for pre-filtering before Claude.
+    Combines source authority, keyword strength, HN score, and recency.
+    Higher = better, send to Claude first.
+    """
+    score = 0.0
+
+    # 1. Source quality base score (0-10)
+    score += SOURCE_QUALITY.get(article.source, 4)
+
+    # 2. HN score bonus — normalise to 0-5 range (HN scores typically 10-500)
+    if article.score > 0:
+        score += min(5.0, article.score / 100)
+
+    # 3. High-signal keyword in title (max +3)
+    title_lower = article.title.lower()
+    kw_hits = sum(1 for kw in HIGH_SIGNAL_KEYWORDS if kw in title_lower)
+    score += min(3.0, kw_hits * 1.5)
+
+    # 4. Recency bonus — articles from last 24h get +2, last 3 days +1
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    age = now - article.published_at if article.published_at.tzinfo else timedelta(days=7)
+    if age < timedelta(hours=24):
+        score += 2.0
+    elif age < timedelta(days=3):
+        score += 1.0
+
+    return score
+
+
 @dataclass
 class RawArticle:
     id: str
@@ -287,16 +351,12 @@ async def fetch_medium(session: aiohttp.ClientSession) -> List[RawArticle]:
 PLATFORM_RSS_FEEDS = [
     # platformengineering.org - official community RSS
     ("https://platformengineering.org/blog/rss.xml", "platformengineering.org"),
-    # Platform Weekly newsletter RSS (Substack)
-    ("https://platformweekly.com/feed", "Platform Weekly"),
-    # Backup: Substack platform engineering newsletters
-    ("https://newsletter.platformengineering.org/feed", "Platform Weekly"),
 ]
 
 # ── New AI news RSS sources ───────────────────────────────────────────────────
 AI_NEWS_RSS_FEEDS = [
     # Company blogs — catch every model/product release on day one
-    ("https://raw.githubusercontent.com/Olshansk/rss-feeds/main/feeds/feed_anthropic_news.xml", "Anthropic Blog"),
+    ("https://www.anthropic.com/rss.xml", "Anthropic Blog"),
     ("https://openai.com/news/rss.xml",                     "OpenAI Blog"),
     ("https://deepmind.google/blog/rss.xml",                "Google DeepMind"),
     ("https://research.google/blog/rss",                    "Google Research"),
@@ -304,11 +364,7 @@ AI_NEWS_RSS_FEEDS = [
     ("https://blog.google/technology/ai/rss/",              "Google AI Blog"),
     ("https://news.mit.edu/rss/topic/artificial-intelligence2", "MIT AI News"),
     # Industry coverage — product launches, funding, analysis
-    ("https://www.theverge.com/rss/ai-artificial-intelligence/index.xml", "The Verge AI"),
-    ("https://techcrunch.com/category/artificial-intelligence/feed/", "TechCrunch AI"),
-    ("https://feeds.arstechnica.com/arstechnica/index",     "Ars Technica"),
     # Research explainers for engineers
-    ("https://www.wired.com/feed/tag/ai/latest/rss",        "Wired AI"),
 ]
 
 
@@ -444,18 +500,20 @@ async def fetch_ai_news_rss(session: aiohttp.ClientSession) -> List[RawArticle]:
 # MAIN AGGREGATOR
 # ─────────────────────────────────────────────
 async def fetch_all_news() -> List[RawArticle]:
-    """Fetch from all sources concurrently"""
+    """Fetch from all active sources concurrently.
+    Active: arXiv, NewsAPI, PE.org, company blogs (OpenAI/DeepMind/Google/AWS/Anthropic), MIT AI News
+    Removed: HN (rate limited), Medium (low quality), TechCrunch/Ars/Wired/Verge (removed by user)
+    """
     timeout = aiohttp.ClientTimeout(total=30)
     connector = aiohttp.TCPConnector(limit=20)
     
     async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
         results = await asyncio.gather(
-            fetch_hackernews(session),
             fetch_arxiv(session),
             fetch_newsapi(session),
             fetch_medium(session),
             fetch_platform_sources(session),
-            fetch_ai_news_rss(session),       # NEW: company blogs + industry news
+            fetch_ai_news_rss(session),
             return_exceptions=True
         )
     
@@ -471,7 +529,7 @@ async def fetch_all_news() -> List[RawArticle]:
                 seen_ids.add(article.id)
                 all_articles.append(article)
     
-    # Sort by score/recency
-    all_articles.sort(key=lambda a: (a.score, a.published_at), reverse=True)
+    # Sort by computed quality score (source authority + keywords + HN score + recency)
+    all_articles.sort(key=quality_score, reverse=True)
     logger.info(f"Total unique articles: {len(all_articles)}")
     return all_articles
