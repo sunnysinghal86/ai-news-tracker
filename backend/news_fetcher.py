@@ -50,24 +50,23 @@ HIGH_SIGNAL_KEYWORDS = [
 
 # ── Source quality weights ─────────────────────────────────────────────────────
 SOURCE_QUALITY = {
-    # Company blogs — highest signal, always relevant
+    # Company blogs — highest signal (10)
     "Anthropic Blog":          10,
     "OpenAI Blog":             10,
     "Google DeepMind":         10,
+    # Google properties (9)
     "Google AI Blog":           9,
     "Google Research":          9,
+    # Cloud AI / Research (8)
     "AWS AI Blog":              8,
-    # Research
     "arXiv":                    8,
+    # Research news (7)
     "MIT AI News":              7,
-    # Community / editorial
-    "Medium":                   5,
-    # Industry news — good signal
-    "NewsAPI":                  5,
-    # Community
-    "Medium":                   5,
-    # Platform engineering
+    # Platform engineering (6)
     "platformengineering.org":  6,
+    # Community / industry (5)
+    "NewsAPI":                  5,
+    "Medium":                   5,
 }
 
 def quality_score(article: "RawArticle") -> float:

@@ -14,6 +14,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from database import init_db, get_db
 from news_fetcher import fetch_all_news
 from summarizer import summarize_articles, enrich_all
+from news_fetcher import quality_score
 from emailer import send_daily_digest
 from routers import news, users, config
 
@@ -99,26 +100,15 @@ async def refresh_news_job():
             logger.info("No new articles — refresh complete")
             return
 
-        # Step 4 — cap BEFORE enriching with balanced selection
-        # Guarantee research articles are included even if score=0 (arXiv, academic sources)
+        # Step 4 — cap BEFORE enriching using quality score
+        # quality_score combines: source authority + HN score + keyword strength + recency
+        # arXiv (weight=8) and MIT AI News (weight=7) naturally rank above Medium (5)
+        # and PE.org (4) so no manual slot reservation is needed
         cap = 20
         if len(new_articles) > cap:
-            # Separate research from everything else
-            research = [a for a in new_articles if a.source in ("arXiv", "MIT AI News", "The Gradient")]
-            others   = [a for a in new_articles if a.source not in ("arXiv", "MIT AI News", "The Gradient")]
-
-            # Sort others by score desc, recency as tiebreaker
-            others.sort(key=lambda a: (a.score, a.published_at), reverse=True)
-
-            # Reserve up to 5 slots for research, rest goes to highest-scored articles
-            research_slots = min(5, len(research))
-            other_slots    = cap - research_slots
-
-            new_articles = others[:other_slots] + research[:research_slots]
-            logger.info(
-                f"Capped to {len(new_articles)} articles "
-                f"({len(new_articles) - research_slots} general + {research_slots} research)"
-            )
+            new_articles.sort(key=quality_score, reverse=True)
+            new_articles = new_articles[:cap]
+            logger.info(f"Capped to top {cap} articles by quality score")
 
         # Step 5 — enrich content only for capped set (trafilatura, no API cost)
         new_articles = await enrich_all(new_articles)
