@@ -61,19 +61,18 @@ const CAT_ICON = {
   "Industry News": "◆", "Tutorial/Guide": "▶", "Platform/Infrastructure": "▣",
 };
 const SRC_STYLE = {
-  // Original sources
-    "arXiv":                   { bg: "#1a3a5c", label: "arXiv" },
-    "NewsAPI":                 { bg: "#b5860d", label: "News" },
-  "platformengineering.org": { bg: "#1c4d35", label: "PE.org" },
+  "arXiv":                   { bg: "#1a3a5c", label: "arXiv" },
+  "NewsAPI":                 { bg: "#b5860d", label: "News" },
   "Medium":                  { bg: "#1a1208", label: "Medium" },
-    // New sources — company blogs
+  "platformengineering.org": { bg: "#1c4d35", label: "PE.org" },
   "Anthropic Blog":          { bg: "#c17f2a", label: "Anthropic" },
   "OpenAI Blog":             { bg: "#1a6b4a", label: "OpenAI" },
   "Google DeepMind":         { bg: "#1558a0", label: "DeepMind" },
   "Google Research":         { bg: "#1558a0", label: "G.Research" },
   "AWS AI Blog":             { bg: "#8a3a00", label: "AWS" },
-  // New sources — industry news
-        };
+  "Google AI Blog":          { bg: "#1a6b8a", label: "Google AI" },
+  "MIT AI News":             { bg: "#8b0000", label: "MIT" },
+};
 function srcFor(s) {
   const k = Object.keys(SRC_STYLE).find(k => s?.includes(k)) || "NewsAPI";
   return SRC_STYLE[k];
@@ -384,8 +383,50 @@ export default function App() {
   const uncategorised      = articles.filter(a => !PLATFORM_CATS.has(a.category) && !RESEARCH_CATS.has(a.category));
   const leftArticles       = [...platformArticles, ...uncategorised];
 
-  // Lead story: highest relevance score overall (first article, already sorted by API)
-  const lead    = articles[0];
+  // ── Lead story selection ──────────────────────────────────────────────────
+  // Weighted score combining relevance, source authority, recency, and content richness.
+  // This runs entirely in the browser — no extra API call needed.
+
+  const SOURCE_AUTHORITY = {
+    "Anthropic Blog": 10, "OpenAI Blog": 10,
+    "Google DeepMind": 9, "Google Research": 9, "Google AI Blog": 9,
+    "AWS AI Blog": 8,  "MIT AI News": 8,  "arXiv": 7,
+    "NewsAPI": 5, "Medium": 4, "platformengineering.org": 4,
+  };
+
+  function leadScore(a) {
+    let score = 0;
+
+    // 1. Claude relevance score — most important signal (0–10, weighted x2)
+    score += (a.relevance_score || 0) * 2;
+
+    // 2. Source authority (0–10)
+    score += SOURCE_AUTHORITY[a.source] || 4;
+
+    // 3. Recency — articles published in last 12h get +4, last 24h +2
+    const ageHours = (Date.now() - new Date(a.published_at).getTime()) / 3600000;
+    if (ageHours < 12)  score += 4;
+    else if (ageHours < 24) score += 2;
+    else if (ageHours < 48) score += 1;
+
+    // 4. Has competitor analysis — richer lead card (+3)
+    if (a.is_product_or_tool && a.competitors?.length > 0) score += 3;
+
+    // 5. AI Model or Product/Tool category — more impactful as lead (+2)
+    if (["AI Model", "Product/Tool"].includes(a.category)) score += 2;
+
+    // 6. Has a meaningful summary — avoid empty fallback articles as lead
+    if (!a.summary || a.summary.length < 50) score -= 10;
+
+    return score;
+  }
+
+  // Pick lead from top 10 articles (already sorted by relevance from API)
+  // Limiting to top 10 avoids picking a low-relevance article just because it's recent
+  const lead = articles.length > 0
+    ? [...articles.slice(0, 10)].sort((a, b) => leadScore(b) - leadScore(a))[0]
+    : null;
+
   const mainCol = leftArticles.filter(a => a.id !== lead?.id).slice(0, 12);
   const sideCol = researchArticles.filter(a => a.id !== lead?.id).slice(0, 10);
 
@@ -469,7 +510,7 @@ export default function App() {
                 style={{ flex: "1 1 180px", padding: "7px 0", border: "none", borderBottom: `2px solid ${T.ink}`, background: "transparent", color: T.ink, fontSize: "13px", outline: "none", fontFamily: "Georgia, serif" }} />
               {[
                 { k: "category", opts: ["Product/Tool","AI Model","Research Paper","Industry News","Tutorial/Guide","Platform/Infrastructure"], ph: "All sections" },
-                { k: "source",   opts: ["Hacker News","arXiv","Medium","NewsAPI","platformengineering.org","Platform Weekly","Anthropic Blog","OpenAI Blog","Google DeepMind","Google Research","AWS AI Blog","The Verge AI","TechCrunch AI","Wired AI","Ars Technica"], ph: "All sources" },
+                { k: "source",   opts: ["arXiv","NewsAPI","Medium","platformengineering.org","Anthropic Blog","OpenAI Blog","Google DeepMind","Google Research","AWS AI Blog","Google AI Blog","MIT AI News"], ph: "All sources" },
               ].map(({ k, opts, ph }) => (
                 <select key={k} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))}
                   style={{ padding: "7px 4px", border: "none", borderBottom: `2px solid ${filters[k] ? T.ink : T.rule}`, background: "transparent", color: filters[k] ? T.ink : T.muted, fontSize: "12px", cursor: "pointer", outline: "none", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.06em" }}>
@@ -539,7 +580,7 @@ export default function App() {
                     {/* Legend box */}
                     <div style={{ marginTop: "24px", padding: "16px", background: T.paperDk, border: `1px solid ${T.rule}` }}>
                       <p style={{ margin: "0 0 10px", fontSize: "9.5px", fontWeight: 700, color: T.muted, letterSpacing: "0.15em", textTransform: "uppercase", fontFamily: "'Barlow Condensed', sans-serif" }}>Sources</p>
-                      {Object.entries(SRC_STYLE).filter(([name]) => !["platformengineering.org","Platform Weekly"].includes(name) || true).map(([name, { bg }]) => (
+                      {Object.entries(SRC_STYLE).map(([name, { bg }]) => (
                         <div key={name} style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "7px" }}>
                           <span style={{ width: "10px", height: "10px", background: bg, display: "inline-block", flexShrink: 0 }} />
                           <span style={{ fontSize: "11px", color: T.muted, fontFamily: "'Barlow Condensed', sans-serif" }}>{name}</span>
