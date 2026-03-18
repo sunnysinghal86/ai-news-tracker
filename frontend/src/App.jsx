@@ -62,24 +62,18 @@ const CAT_ICON = {
 };
 const SRC_STYLE = {
   // Original sources
-  "Hacker News":             { bg: "#c0392b", label: "HN" },
-  "arXiv":                   { bg: "#1a3a5c", label: "arXiv" },
-  "Medium":                  { bg: "#1a1208", label: "Medium" },
-  "NewsAPI":                 { bg: "#b5860d", label: "News" },
+    "arXiv":                   { bg: "#1a3a5c", label: "arXiv" },
+    "NewsAPI":                 { bg: "#b5860d", label: "News" },
   "platformengineering.org": { bg: "#1c4d35", label: "PE.org" },
-  "Platform Weekly":         { bg: "#2d5a3d", label: "PW" },
-  // New sources — company blogs
+  "Medium":                  { bg: "#1a1208", label: "Medium" },
+    // New sources — company blogs
   "Anthropic Blog":          { bg: "#c17f2a", label: "Anthropic" },
   "OpenAI Blog":             { bg: "#1a6b4a", label: "OpenAI" },
   "Google DeepMind":         { bg: "#1558a0", label: "DeepMind" },
   "Google Research":         { bg: "#1558a0", label: "G.Research" },
   "AWS AI Blog":             { bg: "#8a3a00", label: "AWS" },
   // New sources — industry news
-  "The Verge AI":            { bg: "#5a2d82", label: "Verge" },
-  "TechCrunch AI":           { bg: "#005a8a", label: "TC" },
-  "Wired AI":                { bg: "#3a3a3a", label: "Wired" },
-  "Ars Technica":            { bg: "#2c4a1e", label: "Ars" },
-};
+        };
 function srcFor(s) {
   const k = Object.keys(SRC_STYLE).find(k => s?.includes(k)) || "NewsAPI";
   return SRC_STYLE[k];
@@ -507,7 +501,7 @@ export default function App() {
                   {[
                     { label: "Articles Indexed",  val: stats?.total_articles || 0 },
                     { label: "Products & Tools",   val: stats?.product_articles || 0 },
-                    { label: "Sources Active",     val: Object.keys(SRC_STYLE).length },
+                    { label: "Sources Active",     val: 11 },
                     { label: "Subscribers",        val: usersData?.users?.length || 0 },
                   ].map(({ label, val }) => (
                     <div key={label} style={{ padding: "18px 0 16px", borderRight: `1px solid ${T.rule}`, textAlign: "center" }}>
