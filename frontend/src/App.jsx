@@ -75,7 +75,7 @@ const SRC_STYLE = {
   "Google Research":         { bg: "#1558a0", label: "G.Research" },
   "AWS AI Blog":             { bg: "#8a3a00", label: "AWS" },
   // New sources — industry news
-  "VentureBeat AI":          { bg: "#5a2d82", label: "VB" },
+  "The Verge AI":            { bg: "#5a2d82", label: "Verge" },
   "TechCrunch AI":           { bg: "#005a8a", label: "TC" },
   "The Gradient":            { bg: "#3a3a3a", label: "Gradient" },
 };
@@ -383,12 +383,15 @@ export default function App() {
     "AI Model", "Research Paper"
   ]);
 
-  const platformArticles = articles.filter(a => PLATFORM_CATS.has(a.category));
-  const researchArticles  = articles.filter(a => RESEARCH_CATS.has(a.category));
+  const platformArticles  = articles.filter(a => PLATFORM_CATS.has(a.category));
+  const researchArticles   = articles.filter(a => RESEARCH_CATS.has(a.category));
+  // Catch-all: articles whose category doesn't match either set go to left column
+  const uncategorised      = articles.filter(a => !PLATFORM_CATS.has(a.category) && !RESEARCH_CATS.has(a.category));
+  const leftArticles       = [...platformArticles, ...uncategorised];
 
   // Lead story: highest relevance score overall (first article, already sorted by API)
   const lead    = articles[0];
-  const mainCol = platformArticles.filter(a => a.id !== lead?.id).slice(0, 12);
+  const mainCol = leftArticles.filter(a => a.id !== lead?.id).slice(0, 12);
   const sideCol = researchArticles.filter(a => a.id !== lead?.id).slice(0, 10);
 
   const doRefresh = async () => {
@@ -471,7 +474,7 @@ export default function App() {
                 style={{ flex: "1 1 180px", padding: "7px 0", border: "none", borderBottom: `2px solid ${T.ink}`, background: "transparent", color: T.ink, fontSize: "13px", outline: "none", fontFamily: "Georgia, serif" }} />
               {[
                 { k: "category", opts: ["Product/Tool","AI Model","Research Paper","Industry News","Tutorial/Guide","Platform/Infrastructure"], ph: "All sections" },
-                { k: "source",   opts: ["Hacker News","arXiv","Medium","NewsAPI","platformengineering.org","Platform Weekly","Anthropic Blog","OpenAI Blog","Google DeepMind","Google Research","AWS AI Blog","VentureBeat AI","TechCrunch AI","The Gradient"], ph: "All sources" },
+                { k: "source",   opts: ["Hacker News","arXiv","Medium","NewsAPI","platformengineering.org","Platform Weekly","Anthropic Blog","OpenAI Blog","Google DeepMind","Google Research","AWS AI Blog","The Verge AI","TechCrunch AI","The Gradient"], ph: "All sources" },
               ].map(({ k, opts, ph }) => (
                 <select key={k} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))}
                   style={{ padding: "7px 4px", border: "none", borderBottom: `2px solid ${filters[k] ? T.ink : T.rule}`, background: "transparent", color: filters[k] ? T.ink : T.muted, fontSize: "12px", cursor: "pointer", outline: "none", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.06em" }}>
