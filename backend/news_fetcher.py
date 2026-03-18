@@ -304,10 +304,11 @@ AI_NEWS_RSS_FEEDS = [
     ("https://blog.google/technology/ai/rss/",              "Google AI Blog"),
     ("https://news.mit.edu/rss/topic/artificial-intelligence2", "MIT AI News"),
     # Industry coverage — product launches, funding, analysis
-    ("https://www.theverge.com/ai-artificial-intelligence/rss/index.xml", "The Verge AI"),
+    ("https://www.theverge.com/rss/ai-artificial-intelligence/index.xml", "The Verge AI"),
     ("https://techcrunch.com/category/artificial-intelligence/feed/", "TechCrunch AI"),
+    ("https://feeds.arstechnica.com/arstechnica/index",     "Ars Technica"),
     # Research explainers for engineers
-    ("https://thegradient.pub/rss/",                        "The Gradient"),
+    ("https://www.wired.com/feed/tag/ai/latest/rss",        "Wired AI"),
 ]
 
 
