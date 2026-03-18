@@ -129,18 +129,25 @@ async def fetch_hackernews(session: aiohttp.ClientSession) -> List[RawArticle]:
 # arXiv
 # ─────────────────────────────────────────────
 async def fetch_arxiv(session: aiohttp.ClientSession) -> List[RawArticle]:
-    """Fetch latest AI papers from arXiv"""
+    """Fetch latest AI papers from arXiv using category filter (more reliable than full-text search)"""
     articles = []
     try:
-        query = "all:LLM+OR+all:large+language+model+OR+all:AI+agent+OR+all:foundation+model"
-        url = f"https://export.arxiv.org/api/query"
+        # cat:cs.AI+OR+cat:cs.LG+OR+cat:cs.CL is the most reliable arXiv query format
+        url = "https://export.arxiv.org/api/query"
         params = {
-            "search_query": query,
-            "sortBy": "lastUpdatedDate",
+            "search_query": "cat:cs.AI OR cat:cs.LG OR cat:cs.CL",
+            "sortBy": "submittedDate",
             "sortOrder": "descending",
             "max_results": 20,
+            "start": 0,
         }
-        async with session.get(url, params=params) as resp:
+        async with session.get(
+            url, params=params,
+            timeout=aiohttp.ClientTimeout(total=15)
+        ) as resp:
+            if resp.status != 200:
+                logger.warning(f"arXiv returned HTTP {resp.status}")
+                return []
             text = await resp.text()
         
         feed = feedparser.parse(text)
@@ -289,11 +296,13 @@ PLATFORM_RSS_FEEDS = [
 # ── New AI news RSS sources ───────────────────────────────────────────────────
 AI_NEWS_RSS_FEEDS = [
     # Company blogs — catch every model/product release on day one
-    ("https://www.anthropic.com/index.xml",                 "Anthropic Blog"),
+    ("https://raw.githubusercontent.com/Olshansk/rss-feeds/main/feed_anthropic_news.xml", "Anthropic Blog"),
     ("https://openai.com/news/rss.xml",                     "OpenAI Blog"),
-    ("https://deepmind.google/discover/blog/rss",           "Google DeepMind"),
+    ("https://deepmind.google/blog/rss.xml",                "Google DeepMind"),
     ("https://research.google/blog/rss",                    "Google Research"),
     ("https://aws.amazon.com/blogs/machine-learning/feed/", "AWS AI Blog"),
+    ("https://blog.google/technology/ai/rss/",              "Google AI Blog"),
+    ("https://news.mit.edu/rss/topic/artificial-intelligence2", "MIT AI News"),
     # Industry coverage — product launches, funding, analysis
     ("https://venturebeat.com/category/ai/feed/",           "VentureBeat AI"),
     ("https://techcrunch.com/category/artificial-intelligence/feed/", "TechCrunch AI"),
