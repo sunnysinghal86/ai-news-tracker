@@ -38,13 +38,8 @@ async def get_categories():
 async def get_sources():
     return {
         "sources": [
-            # Original
-            "Hacker News", "arXiv", "Medium", "NewsAPI",
-            "platformengineering.org", "Platform Weekly",
-            # New — company blogs
+            "arXiv", "NewsAPI", "Medium", "platformengineering.org",
             "Anthropic Blog", "OpenAI Blog", "Google DeepMind",
-            "Google Research", "AWS AI Blog",
-            # New — industry news
-            "VentureBeat AI", "TechCrunch AI", "The Gradient",
+            "Google Research", "AWS AI Blog", "Google AI Blog", "MIT AI News",
         ]
     }

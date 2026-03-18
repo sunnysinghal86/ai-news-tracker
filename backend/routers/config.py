@@ -17,11 +17,9 @@ async def get_config():
         "digest_time_utc":        "08:00",
         "max_users":              100,
         "sources": [
-            "Hacker News", "arXiv", "Medium", "NewsAPI",
-            "platformengineering.org", "Platform Weekly",
+            "arXiv", "NewsAPI", "Medium", "platformengineering.org",
             "Anthropic Blog", "OpenAI Blog", "Google DeepMind",
-            "Google Research", "AWS AI Blog",
-            "VentureBeat AI", "TechCrunch AI", "The Gradient",
+            "Google Research", "AWS AI Blog", "Google AI Blog", "MIT AI News",
         ],
     }
 
