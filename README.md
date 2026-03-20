@@ -126,7 +126,7 @@ It's not a newsletter you subscribed to and forgot. It's infrastructure you own.
  ┌──────────────────────────────────────────────────────────────────────────────┐
  │                              DATA LAYER                                      │
  │                                                                              │
- │   SQLite (aiosqlite) · ephemeral on /tmp — articles re-fetched hourly        │
+ │   Turso (libSQL cloud) · persistent across restarts · free tier               │
  │   Subscribers seeded from SEED_SUBSCRIBERS env var on every restart          │
  │                                                                              │
  │   articles ────────────── users ──────────── digest_log                     │
@@ -155,7 +155,7 @@ DATA FLOW SEQUENCE (every 12 hours)
   4. Already-summarised articles filtered out — zero Claude cost for known articles
   5. Content enrichment: trafilatura extracts full article body for NEW articles (falls back to og:description for paywalled sites)
   6. New articles (typically 10–20 per refresh) sent to Claude Haiku with up to 1,200 chars of real content
-  7. Results upserted to SQLite (ON CONFLICT — no duplicates)
+  7. Results upserted to Turso via libSQL (ON CONFLICT — no duplicates)
   8. At 08:00 UTC: top articles pulled, HTML email built per subscriber
   9. Resend API delivers personalised digest to each inbox
   10. digest_log entry written for audit trail
@@ -314,7 +314,7 @@ NEWS_API_KEY=...                       # newsapi.org free key (100 req/day)
 # Admin approval
 ADMIN_EMAIL=sunnysinghal86@gmail.com    # receives approval emails for new subscribers
 
-# Subscriber seeding — survives ephemeral filesystem restarts
+# Subscriber seeding — safety net (Turso persists subscribers automatically)
 # Format: "Name1:email1@x.com,Name2:email2@x.com"
 SEED_SUBSCRIBERS=Alice:alice@example.com,Bob:bob@example.com:7  # optional :min_relevance suffix
 
@@ -528,7 +528,7 @@ These tests directly encode critical product behaviours:
 ## Tech Stack
 
 ```
-Backend          Python 3.12 · FastAPI · APScheduler · aiosqlite · aiohttp · trafilatura
+Backend          Python 3.12 · FastAPI · APScheduler · libsql · aiohttp · trafilatura
 AI               Anthropic Claude Haiku (claude-haiku-4-5-20251001)
 Email            Resend API (free tier: 3,000/month)
 Database         Turso (libSQL cloud SQLite) — persistent, survives restarts, free tier
