@@ -1,47 +1,44 @@
 """
-database.py — Turso/libSQL cloud database
+database.py — Turso via libsql embedded replica
 
-Replaces aiosqlite (local /tmp SQLite) with libsql (Turso cloud SQLite).
-Data survives Render restarts — articles and subscribers persist permanently.
+libsql uses SYNCHRONOUS calls with a local SQLite replica that syncs to Turso cloud.
+We run all DB operations in a thread pool executor so they don't block FastAPI's event loop.
 
-Setup:
-  1. pip install libsql
-  2. Create Turso DB: turso db create ai-signal
-  3. Get URL + token: turso db show ai-signal && turso db tokens create ai-signal
-  4. Set env vars: TURSO_URL and TURSO_TOKEN
+Pattern:
+  conn = libsql.connect("local.db", sync_url=TURSO_URL, auth_token=TURSO_TOKEN)
+  conn.sync()                      # pull latest from Turso on startup
+  conn.execute(sql, params)        # read/write local replica
+  conn.commit()                    # commit locally
+  conn.sync()                      # push to Turso after writes
 
-The libsql API mirrors aiosqlite closely:
-  aiosqlite: async with self._db.execute(sql) as cur: rows = await cur.fetchall()
-  libsql:    rs = await self._conn.execute(sql);   rows = rs.rows
-
-All SQL is identical — only the connection and row access patterns change.
+Falls back to plain local SQLite if TURSO_URL not set (local dev).
 """
 
 import os
 import json
 import secrets
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from functools import partial
 from typing import List, Optional
+
+import libsql
 
 logger = logging.getLogger(__name__)
 
-# ── Connection config ─────────────────────────────────────────────────────────
 TURSO_URL   = os.getenv("TURSO_URL", "")
 TURSO_TOKEN = os.getenv("TURSO_TOKEN", "")
-
-# Fallback to local SQLite if Turso not configured (useful for local dev)
-# libsql accepts file: URLs for local SQLite files
 LOCAL_DB    = os.getenv("DB_PATH", "/tmp/news_tracker.db")
 
-_db = None  # global Database instance
+_db = None   # global Database instance
 
 
 # ── Row helper ────────────────────────────────────────────────────────────────
 
 class Row(dict):
-    """Dict subclass that supports both row["col"] and row.col access."""
+    """Dict-like row that supports row["col"] and row.col access."""
     def __getattr__(self, name):
         try:
             return self[name]
@@ -49,34 +46,10 @@ class Row(dict):
             raise AttributeError(name)
 
 
-def _make_rows(rs) -> List[Row]:
-    """Convert libsql ResultSet to list of Row dicts."""
-    cols = list(rs.columns)
-    return [Row(zip(cols, row)) for row in rs.rows]
-
-
-# ── User model ────────────────────────────────────────────────────────────────
-
-class User:
-    def __init__(self, id, email, name, active, categories,
-                 min_relevance, approval_token=None):
-        self.id             = id
-        self.email          = email
-        self.name           = name
-        self.active         = active
-        self.categories     = categories
-        self.min_relevance  = min_relevance
-        self.approval_token = approval_token
-
-    def to_dict(self):
-        return {
-            "id":            self.id,
-            "email":         self.email,
-            "name":          self.name,
-            "active":        self.active,
-            "categories":    self.categories,
-            "min_relevance": self.min_relevance,
-        }
+def _rows_from_cursor(cur) -> List[Row]:
+    """Convert a libsql cursor to list of Row dicts."""
+    cols = [d[0] for d in cur.description] if cur.description else []
+    return [Row(zip(cols, row)) for row in (cur.fetchall() or [])]
 
 
 # ── Category normaliser ───────────────────────────────────────────────────────
@@ -105,106 +78,152 @@ def _normalise_category(raw: str) -> str:
     return "Industry News"
 
 
+# ── User model ────────────────────────────────────────────────────────────────
+
+class User:
+    def __init__(self, id, email, name, active, categories,
+                 min_relevance, approval_token=None):
+        self.id             = id
+        self.email          = email
+        self.name           = name
+        self.active         = active
+        self.categories     = categories
+        self.min_relevance  = min_relevance
+        self.approval_token = approval_token
+
+    def to_dict(self):
+        return {
+            "id":            self.id,
+            "email":         self.email,
+            "name":          self.name,
+            "active":        self.active,
+            "categories":    self.categories,
+            "min_relevance": self.min_relevance,
+        }
+
+
 # ── Database class ────────────────────────────────────────────────────────────
 
 class Database:
     def __init__(self):
         self._conn = None
+        self._loop = None
+        self._executor = None
 
     async def connect(self):
-        import libsql
+        self._loop = asyncio.get_event_loop()
+        # Connect in thread pool — libsql.connect() is blocking
+        await self._run(self._connect_sync)
+        logger.info("Database connected")
+
+    def _connect_sync(self):
+        """Runs in thread pool — establishes libsql connection."""
         if TURSO_URL and TURSO_TOKEN:
             logger.info(f"Connecting to Turso: {TURSO_URL}")
             self._conn = libsql.connect(
-                database=TURSO_URL,
-                auth_token=TURSO_TOKEN,
+                "ai_signal.db",          # local replica filename
                 sync_url=TURSO_URL,
+                auth_token=TURSO_TOKEN,
             )
-            await self._conn.sync()
-            logger.info("Connected to Turso cloud database")
+            self._conn.sync()            # pull latest from Turso on startup
+            logger.info("Connected to Turso (embedded replica)")
         else:
-            logger.warning("TURSO_URL/TOKEN not set — falling back to local SQLite")
+            logger.warning("TURSO_URL not set — using local SQLite fallback")
             self._conn = libsql.connect(LOCAL_DB)
-        return self
 
     async def disconnect(self):
         if self._conn:
-            self._conn.close()
+            await self._run(self._conn.close)
+
+    async def _run(self, func, *args, **kwargs):
+        """Run a blocking function in the thread pool executor."""
+        if args or kwargs:
+            func = partial(func, *args, **kwargs)
+        return await self._loop.run_in_executor(None, func)
+
+    def _exec_sync(self, sql: str, params=None):
+        """Synchronous execute + commit + sync to Turso."""
+        if params:
+            self._conn.execute(sql, params)
+        else:
+            self._conn.execute(sql)
+        self._conn.commit()
+        if TURSO_URL and TURSO_TOKEN:
+            self._conn.sync()
+
+    def _query_sync(self, sql: str, params=None) -> List[Row]:
+        """Synchronous query, returns list of Row dicts."""
+        if params:
+            cur = self._conn.execute(sql, params)
+        else:
+            cur = self._conn.execute(sql)
+        return _rows_from_cursor(cur)
 
     async def _exec(self, sql: str, params=None):
-        """Execute a write statement."""
-        if params:
-            await self._conn.execute(sql, params)
-        else:
-            await self._conn.execute(sql)
-        await self._conn.commit()
+        await self._run(self._exec_sync, sql, params)
 
     async def _query(self, sql: str, params=None) -> List[Row]:
-        """Execute a read statement, return list of Row dicts."""
-        if params:
-            rs = await self._conn.execute(sql, params)
-        else:
-            rs = await self._conn.execute(sql)
-        return _make_rows(rs)
+        return await self._run(self._query_sync, sql, params)
+
+    # ── Schema ────────────────────────────────────────────────────────────────
 
     async def init_schema(self):
-        """Create tables if they don't exist. Safe to run on every startup."""
-        statements = [
-            """CREATE TABLE IF NOT EXISTS articles (
-                id TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
-                url TEXT UNIQUE NOT NULL,
-                source TEXT,
-                author TEXT,
-                score INTEGER DEFAULT 0,
-                published_at TEXT,
-                fetched_at TEXT DEFAULT (datetime('now')),
-                summary TEXT,
-                category TEXT,
-                tags TEXT,
-                relevance_score INTEGER DEFAULT 5,
-                is_product_or_tool INTEGER DEFAULT 0,
-                product_name TEXT,
-                competitors TEXT,
-                competitive_advantage TEXT
-            )""",
-            "CREATE INDEX IF NOT EXISTS idx_articles_relevance ON articles(relevance_score)",
-            "CREATE INDEX IF NOT EXISTS idx_articles_category ON articles(category)",
-            "CREATE INDEX IF NOT EXISTS idx_articles_fetched ON articles(fetched_at)",
-            """CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT UNIQUE NOT NULL,
-                name TEXT,
-                active INTEGER DEFAULT 0,
-                categories TEXT,
-                min_relevance INTEGER DEFAULT 5,
-                created_at TEXT NOT NULL,
-                approval_token TEXT
-            )""",
-            """CREATE TABLE IF NOT EXISTS digest_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                sent_at TEXT NOT NULL,
-                recipient_email TEXT NOT NULL,
-                article_count INTEGER,
-                status TEXT
-            )""",
-        ]
-        for stmt in statements:
-            await self._conn.execute(stmt)
-        await self._conn.commit()
+        def _setup():
+            stmts = [
+                """CREATE TABLE IF NOT EXISTS articles (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    url TEXT UNIQUE NOT NULL,
+                    source TEXT,
+                    author TEXT,
+                    score INTEGER DEFAULT 0,
+                    published_at TEXT,
+                    fetched_at TEXT DEFAULT (datetime('now')),
+                    summary TEXT,
+                    category TEXT,
+                    tags TEXT,
+                    relevance_score INTEGER DEFAULT 5,
+                    is_product_or_tool INTEGER DEFAULT 0,
+                    product_name TEXT,
+                    competitors TEXT,
+                    competitive_advantage TEXT
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_articles_relevance ON articles(relevance_score)",
+                "CREATE INDEX IF NOT EXISTS idx_articles_category ON articles(category)",
+                "CREATE INDEX IF NOT EXISTS idx_articles_fetched ON articles(fetched_at)",
+                """CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT UNIQUE NOT NULL,
+                    name TEXT,
+                    active INTEGER DEFAULT 0,
+                    categories TEXT,
+                    min_relevance INTEGER DEFAULT 5,
+                    created_at TEXT NOT NULL,
+                    approval_token TEXT
+                )""",
+                """CREATE TABLE IF NOT EXISTS digest_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sent_at TEXT NOT NULL,
+                    recipient_email TEXT NOT NULL,
+                    article_count INTEGER,
+                    status TEXT
+                )""",
+            ]
+            for stmt in stmts:
+                self._conn.execute(stmt)
+            self._conn.commit()
+            # Migration: add approval_token column if upgrading
+            try:
+                self._conn.execute("ALTER TABLE users ADD COLUMN approval_token TEXT")
+                self._conn.commit()
+                logger.info("Migration: added approval_token column")
+            except Exception:
+                pass  # already exists
+            if TURSO_URL and TURSO_TOKEN:
+                self._conn.sync()
+            logger.info("Schema ready")
 
-        # Migration: add approval_token column if upgrading from old schema
-        try:
-            await self._conn.execute("ALTER TABLE users ADD COLUMN approval_token TEXT")
-            await self._conn.commit()
-            logger.info("Migration: added approval_token column")
-        except Exception:
-            pass  # Column already exists
-
-        # Sync to Turso cloud after schema setup
-        if TURSO_URL and TURSO_TOKEN:
-            await self._conn.sync()
-        logger.info("Schema ready")
+        await self._run(_setup)
 
     # ── Articles ──────────────────────────────────────────────────────────────
 
@@ -218,36 +237,38 @@ class Database:
         return {r["id"] for r in rows}
 
     async def upsert_articles(self, articles: list):
-        for a in articles:
-            await self._conn.execute(
-                """INSERT INTO articles
-                   (id,title,url,source,author,score,published_at,
-                    summary,category,tags,relevance_score,
-                    is_product_or_tool,product_name,competitors,competitive_advantage)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                   ON CONFLICT(id) DO UPDATE SET
-                    summary=excluded.summary,
-                    category=excluded.category,
-                    tags=excluded.tags,
-                    relevance_score=excluded.relevance_score,
-                    is_product_or_tool=excluded.is_product_or_tool,
-                    product_name=excluded.product_name,
-                    competitors=excluded.competitors,
-                    competitive_advantage=excluded.competitive_advantage""",
-                (
-                    a.id, a.title, a.url, a.source, a.author, a.score,
-                    a.published_at, a.summary,
-                    _normalise_category(a.category),
-                    json.dumps(a.tags or []),
-                    a.relevance_score, int(a.is_product_or_tool),
-                    a.product_name,
-                    json.dumps(a.competitors or []),
-                    a.competitive_advantage,
+        def _upsert():
+            for a in articles:
+                self._conn.execute(
+                    """INSERT INTO articles
+                       (id,title,url,source,author,score,published_at,
+                        summary,category,tags,relevance_score,
+                        is_product_or_tool,product_name,competitors,competitive_advantage)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                       ON CONFLICT(id) DO UPDATE SET
+                        summary=excluded.summary,
+                        category=excluded.category,
+                        tags=excluded.tags,
+                        relevance_score=excluded.relevance_score,
+                        is_product_or_tool=excluded.is_product_or_tool,
+                        product_name=excluded.product_name,
+                        competitors=excluded.competitors,
+                        competitive_advantage=excluded.competitive_advantage""",
+                    (
+                        a.id, a.title, a.url, a.source, a.author, a.score,
+                        a.published_at, a.summary,
+                        _normalise_category(a.category),
+                        json.dumps(a.tags or []),
+                        a.relevance_score, int(a.is_product_or_tool),
+                        a.product_name,
+                        json.dumps(a.competitors or []),
+                        a.competitive_advantage,
+                    )
                 )
-            )
-        await self._conn.commit()
-        if TURSO_URL and TURSO_TOKEN:
-            await self._conn.sync()
+            self._conn.commit()
+            if TURSO_URL and TURSO_TOKEN:
+                self._conn.sync()
+        await self._run(_upsert)
 
     async def get_articles(self, limit=50, offset=0, category=None,
                            source=None, min_relevance=0, search=None):
@@ -300,15 +321,15 @@ class Database:
         rows = await self._query(
             "SELECT * FROM articles WHERE relevance_score >= ? "
             "AND summary IS NOT NULL AND LENGTH(summary) > 40 "
-            "ORDER BY relevance_score DESC, fetched_at DESC LIMIT ?",
+            "ORDER BY relevance_score DESC LIMIT ?",
             (min_relevance, limit),
         )
         return [self._to_dict(r) for r in rows]
 
     async def get_stats(self):
-        rows = await self._query("SELECT COUNT(*) as n FROM articles")
+        rows  = await self._query("SELECT COUNT(*) as n FROM articles")
         total = rows[0]["n"] if rows else 0
-        rows = await self._query(
+        rows  = await self._query(
             "SELECT COUNT(*) as n FROM articles WHERE is_product_or_tool=1"
         )
         products = rows[0]["n"] if rows else 0
@@ -327,20 +348,17 @@ class Database:
     async def create_user(self, email: str, name: str,
                           categories=None, min_relevance: int = 5,
                           require_approval: bool = True) -> "User":
-        now   = datetime.now(timezone.utc).isoformat()
-        token = secrets.token_urlsafe(32) if require_approval else None
+        now    = datetime.now(timezone.utc).isoformat()
+        token  = secrets.token_urlsafe(32) if require_approval else None
         active = 0 if require_approval else 1
         try:
-            await self._conn.execute(
+            await self._exec(
                 "INSERT OR IGNORE INTO users "
-                "(email, name, active, categories, min_relevance, created_at, approval_token) "
+                "(email,name,active,categories,min_relevance,created_at,approval_token) "
                 "VALUES (?,?,?,?,?,?,?)",
                 (email, name, active,
                  json.dumps(categories or []), min_relevance, now, token),
             )
-            await self._conn.commit()
-            if TURSO_URL and TURSO_TOKEN:
-                await self._conn.sync()
         except Exception as e:
             logger.error(f"create_user error: {e}")
         return await self.get_user_by_email(email)
@@ -378,7 +396,7 @@ class Database:
         return User(
             id=r["id"], email=r["email"], name=r["name"],
             active=bool(r["active"]),
-            categories=json.loads(r["categories"] or "[]"),
+            categories=json.loads(r.get("categories") or "[]"),
             min_relevance=r["min_relevance"],
             approval_token=r.get("approval_token"),
         )
@@ -388,7 +406,7 @@ class Database:
         return [
             User(id=r["id"], email=r["email"], name=r["name"],
                  active=True,
-                 categories=json.loads(r["categories"] or "[]"),
+                 categories=json.loads(r.get("categories") or "[]"),
                  min_relevance=r["min_relevance"])
             for r in rows
         ]
@@ -400,9 +418,9 @@ class Database:
         return [
             User(id=r["id"], email=r["email"], name=r["name"],
                  active=False,
-                 categories=json.loads(r["categories"] or "[]"),
+                 categories=json.loads(r.get("categories") or "[]"),
                  min_relevance=r["min_relevance"],
-                 approval_token=r["approval_token"])
+                 approval_token=r.get("approval_token"))
             for r in rows
         ]
 
@@ -412,7 +430,7 @@ class Database:
     async def log_digest(self, email: str, article_count: int, status: str):
         now = datetime.now(timezone.utc).isoformat()
         await self._exec(
-            "INSERT INTO digest_log (sent_at, recipient_email, article_count, status) "
+            "INSERT INTO digest_log (sent_at,recipient_email,article_count,status) "
             "VALUES (?,?,?,?)",
             (now, email, article_count, status)
         )
