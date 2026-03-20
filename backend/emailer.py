@@ -219,8 +219,11 @@ async def send_approval_request(
         logger.error("ADMIN_EMAIL not set — cannot send approval request")
         return False
 
-    approve_url = f"{app_url}/api/users/approve?token={approval_token}"
-    reject_url  = f"{app_url}/api/users/reject?token={approval_token}"
+    # Approve/reject endpoints are on the BACKEND (api.ai-signal.app)
+    # APP_URL is the frontend — derive backend URL from it
+    api_url = os.getenv("API_URL", app_url.replace("ai-signal.app", "api.ai-signal.app"))
+    approve_url = f"{api_url}/api/users/approve?token={approval_token}"
+    reject_url  = f"{api_url}/api/users/reject?token={approval_token}"
 
     from datetime import datetime as _dt
     requested_at = _dt.utcnow().strftime("%b %d, %Y at %H:%M UTC")

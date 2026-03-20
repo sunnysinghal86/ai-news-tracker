@@ -1,6 +1,6 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
-aiosqlite==0.20.0
+libsql          # Turso/libSQL cloud SQLite — replaces aiosqlite
 aiohttp==3.10.5
 feedparser==6.0.11
 apscheduler==3.10.4
