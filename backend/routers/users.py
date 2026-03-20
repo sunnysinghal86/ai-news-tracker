@@ -16,7 +16,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from database import get_db
-from emailer import send_approval_request, send_email
+from emailer import send_approval_request, send_email, send_rejection_email
 from typing import List, Optional
 import os
 import logging
@@ -142,12 +142,12 @@ async def approve_user(token: str):
 async def reject_user(token: str):
     """
     One-click reject endpoint — linked from admin approval email.
-    Deletes the pending subscriber permanently.
+    Deletes the pending subscriber and sends them a polite rejection email.
     """
     async with get_db() as db:
-        success = await db.reject_user(token)
+        user = await db.reject_user(token)
 
-    if not success:
+    if not user:
         return _html_response(
             title="Link Expired",
             message="This rejection link is invalid or has already been used.",
@@ -155,9 +155,16 @@ async def reject_user(token: str):
             icon="⚠️",
         )
 
+    # Notify the subscriber politely
+    await send_rejection_email(
+        subscriber_email=user.email,
+        subscriber_name=user.name,
+    )
+    logger.info(f"Rejected and notified: {user.email}")
+
     return _html_response(
         title="Rejected",
-        message="The subscription request has been rejected and the user has been removed.",
+        message=f"{user.name} ({user.email}) has been rejected and notified by email.",
         colour="#6b7280",
         icon="❌",
     )
