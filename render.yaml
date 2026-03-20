@@ -19,10 +19,18 @@ services:
         sync: false
       - key: FROM_EMAIL
         value: "AI Signal <digest@ai-signal.app>"
-      - key: DB_PATH
+      - key: TURSO_URL       # libsql://your-db.turso.io
+        sync: false
+      - key: TURSO_TOKEN     # from: turso db tokens create ai-signal
+        sync: false
+      - key: DB_PATH         # fallback for local dev only
         value: /tmp/news_tracker.db
       - key: APP_URL
         value: https://ai-signal.app
+      - key: API_URL
+        value: https://api.ai-signal.app
+      - key: ADMIN_EMAIL      # your email — receives subscriber approval requests
+        sync: false
       - key: SEED_SUBSCRIBERS
         sync: false
 
