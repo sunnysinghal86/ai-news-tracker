@@ -282,3 +282,57 @@ async def send_approval_request(
         subject=f"🔔 AI Signal — Approve {subscriber_name} ({subscriber_email})?",
         html_body=html,
     )
+
+
+async def send_rejection_email(subscriber_email: str, subscriber_name: str) -> bool:
+    """
+    Notify a rejected subscriber politely.
+    Sent automatically when admin clicks Reject in the approval email.
+    """
+    app_url = os.getenv("APP_URL", "https://ai-signal.app")
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: #f5f5f5; margin: 0; padding: 40px 20px; }}
+  .card {{ background: #fff; border-radius: 12px; max-width: 480px;
+           margin: 0 auto; padding: 36px;
+           box-shadow: 0 2px 12px rgba(0,0,0,0.08); }}
+  .label {{ font-size: 11px; font-weight: 700; letter-spacing: 2px;
+            text-transform: uppercase; color: #888; margin-bottom: 20px; }}
+  h2 {{ font-size: 22px; font-weight: 700; color: #111; margin: 0 0 12px; }}
+  p {{ color: #555; font-size: 15px; line-height: 1.6; margin: 0 0 16px; }}
+  .footer {{ margin-top: 28px; font-size: 12px; color: #bbb; }}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="label">AI Signal</div>
+  <h2>Thanks for your interest, {subscriber_name}</h2>
+  <p>
+    We've reviewed your subscription request for the AI Signal daily digest
+    and unfortunately we're not able to add you at this time.
+  </p>
+  <p>
+    This may be because we're managing capacity or the digest isn't the right
+    fit right now. You're welcome to browse the latest stories on the dashboard.
+  </p>
+  <a href="{app_url}" style="display:inline-block;margin-top:8px;
+     padding:12px 24px;background:#111;color:#fff;border-radius:8px;
+     text-decoration:none;font-weight:600;font-size:14px;">
+    Browse AI Signal →
+  </a>
+  <div class="footer">AI Signal · {app_url}</div>
+</div>
+</body>
+</html>"""
+
+    return await send_email(
+        to_email=subscriber_email,
+        subject="AI Signal — Subscription Request Update",
+        html_body=html,
+    )
