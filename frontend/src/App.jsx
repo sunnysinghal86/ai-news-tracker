@@ -28,6 +28,8 @@ function useApi(endpoint, params = {}) {
   const stableParams = JSON.stringify(params);
 
   const run = useCallback(async () => {
+    // Skip fetch if endpoint is null (lazy loading)
+    if (!endpoint) { setLoading(false); return; }
     setLoading(true);
     try {
       const qs = new URLSearchParams(
@@ -362,9 +364,13 @@ export default function App() {
   const [activeTab, setActiveTab]         = useState("feed");
 
   const { data: news, loading, refetch } = useApi("/api/news", { limit: 40, ...filters });
-  const { data: stats }                  = useApi("/api/news/stats");
-  const { data: usersData, refetch: refetchUsers } = useApi("/api/users");
-  const { data: cfg }                    = useApi("/api/config");
+  const { data: summary }                = useApi("/api/summary"); // stats + config in one call
+  // Load subscribers only when that tab is active — saves an API call on initial load
+  const { data: usersData, refetch: refetchUsers } = useApi(
+    activeTab === "subscribers" ? "/api/users" : null
+  );
+  const stats = summary;
+  const cfg   = summary;
 
   const articles  = news?.articles || [];
   // Split articles by actual category into two editorially meaningful columns:
