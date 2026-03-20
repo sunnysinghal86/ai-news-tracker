@@ -510,39 +510,30 @@ export default function App() {
         {activeTab === "feed" && (
           <>
             {/* Filter strip */}
-            {/* Filter strip — two rows: controls on top, count on bottom */}
-            <div style={{ padding: "14px 0", borderBottom: `1px solid ${T.rule}` }}>
-              {/* Row 1 — filters */}
-              <div style={{ display: "flex", gap: "14px", flexWrap: "wrap", alignItems: "center", marginBottom: "8px" }}>
-                <input placeholder="Search headlines…" value={filters.search}
-                  onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
-                  style={{ flex: "1 1 180px", padding: "7px 0", border: "none", borderBottom: `2px solid ${T.ink}`, background: "transparent", color: T.ink, fontSize: "13px", outline: "none", fontFamily: "Georgia, serif" }} />
-                {[
-                  { k: "category", opts: ["Product/Tool","AI Model","Research Paper","Industry News","Tutorial/Guide","Platform/Infrastructure"], ph: "All sections" },
-                  { k: "source",   opts: ["arXiv","NewsAPI","Medium","platformengineering.org","Anthropic Blog","OpenAI Blog","Google DeepMind","Google Research","AWS AI Blog","Google AI Blog","MIT AI News"], ph: "All sources" },
-                ].map(({ k, opts, ph }) => (
-                  <select key={k} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))}
-                    style={{ padding: "7px 4px", border: "none", borderBottom: `2px solid ${filters[k] ? T.ink : T.rule}`, background: "transparent", color: filters[k] ? T.ink : T.muted, fontSize: "12px", cursor: "pointer", outline: "none", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.06em" }}>
-                    <option value="">{ph}</option>
-                    {opts.map(o => <option key={o} value={o}>{o}</option>)}
-                  </select>
-                ))}
-              </div>
-              {/* Row 2 — relevance slider + story count on same line, clearly separated */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <label style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "11px", color: T.muted, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.08em" }}>
-                  <span style={{ whiteSpace: "nowrap" }}>MIN RELEVANCE</span>
-                  <input type="range" min={0} max={9} value={filters.min_relevance}
-                    onChange={e => setFilters(f => ({ ...f, min_relevance: +e.target.value }))}
-                    style={{ width: "80px", accentColor: T.ink }} />
-                  <span style={{ color: filters.min_relevance ? T.ink : T.faint, fontWeight: 700, minWidth: "28px" }}>
-                    {filters.min_relevance || "ANY"}
-                  </span>
-                </label>
-                <span style={{ fontSize: "11px", color: T.faint, fontFamily: "'Barlow Condensed', sans-serif" }}>
-                  {articles.length} STORIES
+            {/* Filter strip — single row */}
+            <div style={{ display: "flex", gap: "16px", alignItems: "center", padding: "14px 0", borderBottom: `1px solid ${T.rule}`, flexWrap: "wrap" }}>
+              <input placeholder="Search headlines…" value={filters.search}
+                onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
+                style={{ width: "220px", flexShrink: 0, padding: "7px 0", border: "none", borderBottom: `2px solid ${T.ink}`, background: "transparent", color: T.ink, fontSize: "13px", outline: "none", fontFamily: "Georgia, serif" }} />
+              {[
+                { k: "category", opts: ["Product/Tool","AI Model","Research Paper","Industry News","Tutorial/Guide","Platform/Infrastructure"], ph: "All sections" },
+                { k: "source",   opts: ["arXiv","NewsAPI","Medium","platformengineering.org","Anthropic Blog","OpenAI Blog","Google DeepMind","Google Research","AWS AI Blog","Google AI Blog","MIT AI News"], ph: "All sources" },
+              ].map(({ k, opts, ph }) => (
+                <select key={k} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))}
+                  style={{ padding: "7px 6px", border: "none", borderBottom: `2px solid ${filters[k] ? T.ink : T.rule}`, background: "transparent", color: filters[k] ? T.ink : T.muted, fontSize: "12px", cursor: "pointer", outline: "none", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.06em", flexShrink: 0 }}>
+                  <option value="">{ph}</option>
+                  {opts.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ))}
+              <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", color: T.muted, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.08em", flexShrink: 0 }}>
+                <span style={{ whiteSpace: "nowrap" }}>MIN RELEVANCE</span>
+                <input type="range" min={0} max={9} value={filters.min_relevance}
+                  onChange={e => setFilters(f => ({ ...f, min_relevance: +e.target.value }))}
+                  style={{ width: "80px", accentColor: T.ink }} />
+                <span style={{ color: filters.min_relevance ? T.ink : T.faint, fontWeight: 700, minWidth: "28px" }}>
+                  {filters.min_relevance || "ANY"}
                 </span>
-              </div>
+              </label>
             </div>
 
             {loading ? (
