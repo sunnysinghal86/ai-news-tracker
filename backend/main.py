@@ -173,6 +173,29 @@ async def health():
     return {"status": "healthy"}
 
 
+@app.get("/api/summary")
+async def get_summary():
+    """Combined stats + config — reduces page load from 4 API calls to 2."""
+    async with get_db() as db:
+        s = await db.get_stats()
+    return {
+        "total_articles":       s["total_articles"],
+        "product_articles":     s["product_articles"],
+        "by_category":          s["by_category"],
+        "anthropic_configured": bool(os.getenv("ANTHROPIC_API_KEY")),
+        "resend_configured":    bool(os.getenv("RESEND_API_KEY")),
+        "news_api_configured":  bool(os.getenv("NEWS_API_KEY")),
+        "turso_configured":     bool(os.getenv("TURSO_URL")),
+        "refresh_interval_hours": 12,
+        "digest_time_utc":      "08:00",
+        "sources": [
+            "arXiv", "NewsAPI", "Medium", "platformengineering.org",
+            "Anthropic Blog", "OpenAI Blog", "Google DeepMind",
+            "Google Research", "AWS AI Blog", "Google AI Blog", "MIT AI News",
+        ],
+    }
+
+
 
 @app.post("/api/reprocess-rivals")
 async def reprocess_rivals():
