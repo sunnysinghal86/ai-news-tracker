@@ -191,6 +191,44 @@ Your app will be live at:
 
 ---
 
+## Database Setup (Turso)
+
+AI Signal uses [Turso](https://turso.tech) — a free cloud SQLite service — to persist articles and subscribers across Render restarts. Without it, your data is wiped every time the service redeploys.
+
+**Why Turso:**
+- Free tier: 500 databases, 9GB storage, 1 billion row reads/month
+- Zero ops — no managed DB, no Redis, no message queue
+- Mumbai region (`aws-ap-south-1`) — lowest latency for India-based deployments
+
+**Setup (5 minutes):**
+
+```bash
+# 1. Install Turso CLI
+brew install tursodatabase/tap/turso
+
+# 2. Login
+turso auth login
+
+# 3. Create database
+turso db create ai-signal
+
+# 4. Get URL
+turso db show ai-signal
+
+# 5. Create auth token
+turso db tokens create ai-signal
+```
+
+Then add to Render → backend → Environment:
+```
+TURSO_URL   = libsql://ai-signal-<your-id>.aws-ap-south-1.turso.io
+TURSO_TOKEN = eyJ...
+```
+
+The app falls back to local SQLite (`DB_PATH`) if `TURSO_URL` is not set — useful for local development.
+
+---
+
 ## Keep-Alive Cron (Required for Free Tier)
 
 Render's free tier spins down web services after 15 minutes of inactivity, causing a cold-start delay on the next request. A keep-alive cron job prevents this.
@@ -248,6 +286,7 @@ The `/health` endpoint returns `{"status": "healthy"}` and costs nothing to call
 | AWS AI Blog RSS | Unlimited | — | **$0** |
 | Google AI Blog RSS | Unlimited | — | **$0** |
 | MIT AI News RSS | Unlimited | — | **$0** |
+| Turso (cloud SQLite) | Free tier | 9GB storage | **$0** |
 | cron-job.org | Free | 4,320 pings/month | **$0** |
 | Claude Haiku 4.5 | $1.00/1M input, $5.00/1M output | ~28–30 new articles/day (cap enforced) | **~$2.50/month** |
 | **TOTAL** | | | **~$2.50/month** |
@@ -265,6 +304,10 @@ RESEND_API_KEY=re_...                  # Email delivery (resend.com)
 FROM_EMAIL=AI Signal <digest@ai-signal.app>
 PYTHON_VERSION=3.12.0                  # Pin Python — avoids build failures
 
+# Database (Turso cloud SQLite — persists data across restarts)
+TURSO_URL=libsql://ai-signal-xxx.turso.io   # from: turso db show ai-signal
+TURSO_TOKEN=eyJ...                           # from: turso db tokens create ai-signal
+
 # Strongly recommended
 NEWS_API_KEY=...                       # newsapi.org free key (100 req/day)
 
@@ -277,7 +320,9 @@ SEED_SUBSCRIBERS=Alice:alice@example.com,Bob:bob@example.com:7  # optional :min_
 
 # App settings
 APP_URL=https://ai-signal.app
-DB_PATH=/tmp/news_tracker.db          # Ephemeral — upgrade to /data with Render persistent disk for production
+TURSO_URL=libsql://ai-signal-xxx.aws-ap-south-1.turso.io  # from: turso db show ai-signal
+TURSO_TOKEN=eyJ...                        # from: turso db tokens create ai-signal
+DB_PATH=/tmp/news_tracker.db              # local dev fallback only — ignored when TURSO_URL is set
 ```
 
 ---
@@ -403,13 +448,90 @@ These tests directly encode critical product behaviours:
 
 ---
 
+## How It All Connects
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     EVERY 12 HOURS                                  │
+│                                                                     │
+│  news_fetcher.py          summarizer.py          database.py        │
+│  ─────────────────        ─────────────          ───────────        │
+│  Fetch 11 sources   →     quality_score()   →    get_summarised     │
+│  concurrently             rank articles          _ids()             │
+│  (asyncio.gather)                                                   │
+│                           cap at 20              skip already-      │
+│                           (top by score)         seen articles      │
+│                                                                     │
+│                           enrich_all()           upsert_articles()  │
+│                           (trafilatura +          ON CONFLICT —      │
+│                            og:description)        never duplicates  │
+│                                                                     │
+│                           Claude Haiku            normalise         │
+│                           summary + category      category values   │
+│                           + rivals + score                          │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                     EVERY DAY 08:00 UTC                             │
+│                                                                     │
+│  database.py              emailer.py             Resend API         │
+│  ─────────────            ──────────             ──────────         │
+│  get_top_articles()  →    build HTML email  →    deliver to inbox   │
+│  per subscriber           with rivals table                         │
+│  (min_relevance +         + competitive                             │
+│   category filter)         advantage                                │
+│                                                                     │
+│  fallback cascade:        sent sequentially      1s gap between     │
+│  24h → 48h → 7d →         (not concurrent)       users avoids       │
+│  best available                                  rate limit         │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                     USER VISITS ai-signal.app                       │
+│                                                                     │
+│  App.jsx (React)          FastAPI                database.py        │
+│  ─────────────            ───────                ───────────        │
+│  useApi() hooks     →     GET /api/news     →    get_articles()     │
+│  fetch on mount           GET /api/stats         SQL with filters   │
+│  re-fetch on filter       GET /api/config                           │
+│  change                   GET /api/users                            │
+│                                                                     │
+│  Split articles:          JSON response     →    articles returned  │
+│  PLATFORM_CATS → left                                               │
+│  RESEARCH_CATS → right                                              │
+│  uncategorised → left                                               │
+│                                                                     │
+│  leadScore() picks                                                  │
+│  best article from                                                  │
+│  top 10 as headline                                                 │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                     NEW SUBSCRIBER FLOW                             │
+│                                                                     │
+│  App.jsx              database.py          emailer.py               │
+│  ─────────            ───────────          ──────────               │
+│  Subscribe form  →    create_user()   →    send_approval_request()  │
+│  POST /api/users      active=0             to ADMIN_EMAIL           │
+│                       approval_token       with ✅ Approve          │
+│                       = random 32 chars    and ❌ Reject buttons    │
+│                                                ↓                   │
+│                       approve_user()  ←    Admin clicks Approve     │
+│                       active=1                                      │
+│                       token cleared    →    send welcome email      │
+│                                             to subscriber           │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
 ## Tech Stack
 
 ```
 Backend          Python 3.12 · FastAPI · APScheduler · aiosqlite · aiohttp · trafilatura
 AI               Anthropic Claude Haiku (claude-haiku-4-5-20251001)
 Email            Resend API (free tier: 3,000/month)
-Database         SQLite on /tmp — ephemeral, zero ops
+Database         Turso (libSQL cloud SQLite) — persistent, survives restarts, free tier
 News Sources     arXiv · NewsAPI · Medium · platformengineering.org
                  Anthropic Blog · OpenAI Blog · Google DeepMind · Google Research
                  AWS AI Blog · Google AI Blog · MIT AI News
