@@ -375,16 +375,24 @@ class Database:
         )
         return await self.get_user_by_email(rows[0]["email"])
 
-    async def reject_user(self, token: str) -> bool:
+    async def reject_user(self, token: str) -> Optional["User"]:
+        """Reject and delete a pending subscriber. Returns the user before deletion."""
         rows = await self._query(
-            "SELECT email FROM users WHERE approval_token=?", (token,)
+            "SELECT * FROM users WHERE approval_token=?", (token,)
         )
         if not rows:
-            return False
+            return None
+        r = rows[0]
+        rejected_user = User(
+            id=r["id"], email=r["email"], name=r["name"],
+            active=False,
+            categories=json.loads(r.get("categories") or "[]"),
+            min_relevance=r["min_relevance"],
+        )
         await self._exec(
             "DELETE FROM users WHERE approval_token=?", (token,)
         )
-        return True
+        return rejected_user
 
     async def get_user_by_email(self, email: str) -> Optional["User"]:
         rows = await self._query(
