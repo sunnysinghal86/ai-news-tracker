@@ -100,27 +100,29 @@ async def refresh_news_job():
             logger.info("No new articles — refresh complete")
             return
 
-        # Step 4 — cap BEFORE enriching with guaranteed research slots
+        # Step 4 — cap BEFORE enriching with source diversity
+        # Sort all new articles by quality score
+        new_articles.sort(key=quality_score, reverse=True)
+
+        # Walk down the sorted list, enforce max 3 articles per source
+        # This guarantees variety — PE.org can't take all 20 slots even if
+        # it has 15 high-scoring articles
         cap = 20
+        MAX_PER_SOURCE = 3
         if len(new_articles) > cap:
-            # Separate research sources — arXiv titles score low on keywords
-            # (academic titles rarely contain "launches" or "beats") so we
-            # reserve 4 slots to guarantee Research & Models column never empties
-            research_sources = {"arXiv", "MIT AI News"}
-            research = sorted(
-                [a for a in new_articles if a.source in research_sources],
-                key=quality_score, reverse=True
-            )
-            others = sorted(
-                [a for a in new_articles if a.source not in research_sources],
-                key=quality_score, reverse=True
-            )
-            research_slots = min(5, len(research))
-            other_slots    = cap - research_slots
-            new_articles   = others[:other_slots] + research[:research_slots]
+            selected = []
+            source_counts = {}
+            for a in new_articles:
+                if len(selected) >= cap:
+                    break
+                count = source_counts.get(a.source, 0)
+                if count < MAX_PER_SOURCE:
+                    selected.append(a)
+                    source_counts[a.source] = count + 1
+            new_articles = selected
             logger.info(
                 f"Capped to {len(new_articles)} articles "
-                f"({other_slots} quality-scored + {research_slots} research)"
+                f"(max {MAX_PER_SOURCE}/source): {dict(source_counts)}"
             )
 
         # Step 5 — enrich content only for capped set (trafilatura, no API cost)

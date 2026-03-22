@@ -303,7 +303,9 @@ class Database:
         conditions = ["1=1"]
         params = []
         if days:
-            conditions.append("fetched_at >= datetime('now', ? || ' days')")
+            # substr(published_at, 1, 10) extracts YYYY-MM-DD — works for any ISO format
+            # including "2026-01-23T10:00:00+00:00" or "2026-01-23 10:00:00"
+            conditions.append("substr(published_at, 1, 10) >= date('now', ? || ' days')")
             params.append(f"-{days}")
         if category:
             conditions.append("category = ?")
@@ -320,7 +322,7 @@ class Database:
         where = " AND ".join(conditions)
         rows = await self._query(
             f"SELECT * FROM articles WHERE {where} "
-            f"ORDER BY relevance_score DESC, fetched_at DESC "
+            f"ORDER BY relevance_score DESC, published_at DESC "
             f"LIMIT ? OFFSET ?",
             params + [limit, offset]
         )
