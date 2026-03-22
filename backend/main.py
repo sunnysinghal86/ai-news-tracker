@@ -83,49 +83,45 @@ app.include_router(config.router, prefix="/api/config", tags=["config"])
 async def refresh_news_job():
     logger.info("News refresh starting...")
     try:
-        # Step 1 — fetch from all 14 sources
+        # Step 1 — fetch from all sources
         raw_articles = await fetch_all_news()
-        logger.info(f"Fetched {len(raw_articles)} raw articles from all sources")
+        logger.info(f"Fetched {len(raw_articles)} raw articles")
 
-        # Step 2 — get IDs already summarised in DB (skip these to save Claude cost)
-        async with get_db() as db:
-            already_seen = await db.get_summarised_ids()
-        logger.info(f"Skipping {len(already_seen)} already-summarised articles")
+        # Step 2 — score ALL articles FIRST, then pick top 20
+        # CRITICAL: scoring must happen before filtering already-seen articles.
+        # If we filter first, only Medium (always fresh) survives and dominates.
+        raw_articles.sort(key=quality_score, reverse=True)
+        top_articles = raw_articles[:20]
 
-        # Step 3 — filter to only new/unseen articles
-        new_articles = [a for a in raw_articles if a.id not in already_seen]
-        logger.info(f"New articles to process: {len(new_articles)}")
-
-        if not new_articles:
-            logger.info("No new articles — refresh complete")
-            return
-
-        # Step 4 — take top 20 by pure quality score
-        # quality_score = source authority (Anthropic=10, Medium=5) +
-        #                 title keywords + recency bonus
-        # No artificial source caps — merit decides.
-        # Medium scores 5 base vs Anthropic 10, so it only wins if everything
-        # higher-quality is already in the DB (already_seen).
-        new_articles.sort(key=quality_score, reverse=True)
-        new_articles = new_articles[:20]
         source_dist = {}
-        for a in new_articles:
+        for a in top_articles:
             source_dist[a.source] = source_dist.get(a.source, 0) + 1
         logger.info(f"Top 20 by quality score: {source_dist}")
 
-        # Step 5 — enrich content only for capped set (trafilatura, no API cost)
+        # Step 3 — from the top 20, find which ones Claude hasn't seen yet
+        async with get_db() as db:
+            already_seen = await db.get_summarised_ids()
+
+        new_articles = [a for a in top_articles if a.id not in already_seen]
+        logger.info(
+            f"Top 20: {len(top_articles)} total, "
+            f"{len(already_seen & {a.id for a in top_articles})} already in DB, "
+            f"{len(new_articles)} need Claude"
+        )
+
+        if not new_articles:
+            logger.info("All top 20 already summarised — refresh complete")
+            return
+
+        # Step 4 — enrich + Claude only for new ones
         new_articles = await enrich_all(new_articles)
-        logger.info(f"Enrichment done for {len(new_articles)} articles")
-
-        # Step 6 — send to Claude
         processed = await summarize_articles(new_articles)
-        logger.info(f"Summarised {len(processed)} articles")
+        logger.info(f"Summarised {len(processed)} new articles")
 
-        # Step 7 — upsert into DB
         if processed:
             async with get_db() as db:
                 await db.upsert_articles(processed)
-            logger.info(f"Stored {len(processed)} articles — refresh complete")
+            logger.info("Refresh complete")
 
     except Exception as e:
         logger.error(f"News refresh failed: {e}", exc_info=True)
