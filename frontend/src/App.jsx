@@ -406,37 +406,28 @@ export default function App() {
   // Weighted score combining relevance, source authority, recency, and content richness.
   // This runs entirely in the browser — no extra API call needed.
 
-  const SOURCE_AUTHORITY = {
-    "Anthropic Blog": 10, "OpenAI Blog": 10, "Google DeepMind": 10,
-    "Google AI Blog": 9,  "Google Research": 9,
-    "AWS AI Blog": 8,     "arXiv": 8,
-    "MIT AI News": 7,     "platformengineering.org": 7,
-    "NewsAPI": 5,         "Medium": 5,
-  };
-
   function leadScore(a) {
+    // Lead story selection — source-agnostic, merit only.
+    // A PE.org article with relevance 9 beats an Anthropic post with relevance 6.
     let score = 0;
 
-    // 1. Claude relevance score — most important signal (0–10, weighted x2)
-    score += (a.relevance_score || 0) * 2;
+    // 1. Claude relevance score — the primary signal, weighted heavily (0–30)
+    score += (a.relevance_score || 0) * 3;
 
-    // 2. Source authority (0–10)
-    score += SOURCE_AUTHORITY[a.source] || 4;
-
-    // 3. Recency — articles published in last 12h get +4, last 24h +2
+    // 2. Recency — fresh news is more useful as a lead (0–4)
     const ageHours = (Date.now() - new Date(a.published_at).getTime()) / 3600000;
-    if (ageHours < 12)  score += 4;
-    else if (ageHours < 24) score += 2;
-    else if (ageHours < 48) score += 1;
+    if (ageHours < 12)       score += 4;
+    else if (ageHours < 24)  score += 2;
+    else if (ageHours < 48)  score += 1;
 
-    // 4. Has competitor analysis — richer lead card (+3)
+    // 3. Has competitor analysis — richer lead card experience (+3)
     if (a.is_product_or_tool && a.competitors?.length > 0) score += 3;
 
-    // 5. AI Model or Product/Tool category — more impactful as lead (+2)
-    if (["AI Model", "Product/Tool"].includes(a.category)) score += 2;
+    // 4. Category bonus — product/model launches make more impactful leads (+2)
+    if (["AI Model", "Product/Tool", "Platform/Infrastructure"].includes(a.category)) score += 2;
 
-    // 6. Has a meaningful summary — avoid empty fallback articles as lead
-    if (!a.summary || a.summary.length < 50) score -= 10;
+    // 5. Penalise empty summaries — don't lead with thin content
+    if (!a.summary || a.summary.length < 50) score -= 15;
 
     return score;
   }
