@@ -407,10 +407,11 @@ export default function App() {
   // This runs entirely in the browser — no extra API call needed.
 
   const SOURCE_AUTHORITY = {
-    "Anthropic Blog": 10, "OpenAI Blog": 10,
-    "Google DeepMind": 9, "Google Research": 9, "Google AI Blog": 9,
-    "AWS AI Blog": 8,  "MIT AI News": 8,  "arXiv": 7,
-    "NewsAPI": 5, "Medium": 4, "platformengineering.org": 4,
+    "Anthropic Blog": 10, "OpenAI Blog": 10, "Google DeepMind": 10,
+    "Google AI Blog": 9,  "Google Research": 9,
+    "AWS AI Blog": 8,     "arXiv": 8,
+    "MIT AI News": 7,     "platformengineering.org": 7,
+    "NewsAPI": 5,         "Medium": 5,
   };
 
   function leadScore(a) {
