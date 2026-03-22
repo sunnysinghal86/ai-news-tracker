@@ -62,8 +62,8 @@ SOURCE_QUALITY = {
     "arXiv":                    8,
     # Research news (7)
     "MIT AI News":              7,
-    # Platform engineering (6)
-    "platformengineering.org":  6,
+    # Platform engineering (7) — on par with research sources
+    "platformengineering.org":  7,
     # Community / industry (5)
     "NewsAPI":                  5,
     "Medium":                   5,
@@ -417,6 +417,69 @@ async def fetch_platform_sources(session: aiohttp.ClientSession) -> List[RawArti
 
     return articles
 
+
+async def fetch_anthropic(session: aiohttp.ClientSession) -> List[RawArticle]:
+    """
+    Fetch Anthropic blog posts via their sitemap.
+    Anthropic has no official RSS feed — sitemap is the most reliable alternative.
+    Filters to /news/ URLs only to avoid product pages, docs etc.
+    """
+    articles = []
+    try:
+        sitemap_url = "https://www.anthropic.com/sitemap.xml"
+        async with session.get(
+            sitemap_url,
+            timeout=aiohttp.ClientTimeout(total=12),
+            headers={"User-Agent": "Mozilla/5.0 (compatible; AISignalBot/1.0)"},
+        ) as resp:
+            if resp.status != 200:
+                logger.warning(f"Anthropic sitemap returned HTTP {resp.status}")
+                return []
+            text = await resp.text()
+
+        # Parse sitemap XML — extract /news/ URLs with lastmod dates
+        import re as _re
+        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+
+        urls = _re.findall(r'<loc>(https://www\.anthropic\.com/news/[^<]+)</loc>', text)
+        dates = _re.findall(r'<lastmod>([^<]+)</lastmod>', text)
+
+        # Zip URLs with dates (sitemap entries are in order)
+        for i, url in enumerate(urls[:20]):  # max 20 from sitemap
+            try:
+                # Parse date if available
+                if i < len(dates):
+                    from datetime import datetime as _dt
+                    pub = _dt.fromisoformat(dates[i].replace("Z", "+00:00"))
+                else:
+                    pub = datetime.now(timezone.utc)
+
+                if pub < cutoff:
+                    continue
+
+                # Extract slug as title placeholder — will be enriched by trafilatura
+                slug = url.rstrip("/").split("/")[-1].replace("-", " ").title()
+
+                articles.append(RawArticle(
+                    id=gen_id(url),
+                    title=slug,
+                    url=url,
+                    source="Anthropic Blog",
+                    published_at=pub,
+                    content="",   # trafilatura will enrich this
+                    author="Anthropic",
+                    tags=["anthropic", "ai"],
+                    score=0,
+                ))
+            except Exception as e:
+                logger.debug(f"Anthropic sitemap entry error: {e}")
+                continue
+
+        logger.info(f"Anthropic Blog: {len(articles)} articles (via sitemap)")
+    except Exception as e:
+        logger.warning(f"Anthropic sitemap fetch error: {e}")
+    return articles
+
 async def fetch_ai_news_rss(session: aiohttp.ClientSession) -> List[RawArticle]:
     """
     Fetch from company blogs and AI industry news RSS feeds.
@@ -512,6 +575,7 @@ async def fetch_all_news() -> List[RawArticle]:
             fetch_newsapi(session),
             fetch_medium(session),
             fetch_platform_sources(session),
+            fetch_anthropic(session),
             fetch_ai_news_rss(session),
             return_exceptions=True
         )

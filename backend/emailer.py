@@ -14,9 +14,10 @@ logger = logging.getLogger(__name__)
 # Keys read fresh on every call — never cached at import time
 
 
-def build_html_email(user_name: str, articles: List[dict]) -> str:
+def build_html_email(user_name: str, articles: List[dict], unsubscribe_token: str = "") -> str:
     """Generate beautiful HTML email digest"""
-    app_url  = os.getenv("APP_URL", "https://ai-signal-frontend.onrender.com")
+    app_url  = os.getenv("APP_URL", "https://ai-signal.app")
+    api_url  = os.getenv("API_URL", "https://api.ai-signal.app")
     date_str = datetime.now().strftime("%A, %B %d, %Y")
     
     # Group by category
@@ -147,7 +148,7 @@ def build_html_email(user_name: str, articles: List[dict]) -> str:
       <p style="margin:0 0 8px;color:#9ca3af;font-size:12px;">You're receiving this because you subscribed to AI News Tracker.</p>
       <a href="{app_url}" style="color:#3b82f6;font-size:12px;text-decoration:none;">View Dashboard</a>
       &nbsp;·&nbsp;
-      <a href="{app_url}/unsubscribe" style="color:#9ca3af;font-size:12px;text-decoration:none;">Unsubscribe</a>
+      <a href="{api_url}/api/users/unsubscribe?token={unsubscribe_token}" style="color:#9ca3af;font-size:12px;text-decoration:none;">Unsubscribe</a>
     </div>
   </div>
 </body>
@@ -199,7 +200,8 @@ async def send_daily_digest(user, articles: List[dict]) -> bool:
     date_str = datetime.now().strftime("%b %d, %Y")
     subject = f"🤖 AI News Digest – {date_str} ({len(articles)} stories)"
     
-    html = build_html_email(user.name or "there", articles)
+    unsub_token = getattr(user, "unsubscribe_token", "") or ""
+    html = build_html_email(user.name or "there", articles, unsubscribe_token=unsub_token)
     return await send_email(user.email, subject, html)
 
 

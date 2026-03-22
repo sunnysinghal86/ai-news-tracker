@@ -82,14 +82,15 @@ def _normalise_category(raw: str) -> str:
 
 class User:
     def __init__(self, id, email, name, active, categories,
-                 min_relevance, approval_token=None):
-        self.id             = id
-        self.email          = email
-        self.name           = name
-        self.active         = active
-        self.categories     = categories
-        self.min_relevance  = min_relevance
-        self.approval_token = approval_token
+                 min_relevance, approval_token=None, unsubscribe_token=None):
+        self.id                = id
+        self.email             = email
+        self.name              = name
+        self.active            = active
+        self.categories        = categories
+        self.min_relevance     = min_relevance
+        self.approval_token    = approval_token
+        self.unsubscribe_token = unsubscribe_token
 
     def to_dict(self):
         return {
@@ -199,7 +200,8 @@ class Database:
                     categories TEXT,
                     min_relevance INTEGER DEFAULT 5,
                     created_at TEXT NOT NULL,
-                    approval_token TEXT
+                    approval_token TEXT,
+                    unsubscribe_token TEXT
                 )""",
                 """CREATE TABLE IF NOT EXISTS digest_log (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -217,6 +219,12 @@ class Database:
                 self._conn.execute("ALTER TABLE users ADD COLUMN approval_token TEXT")
                 self._conn.commit()
                 logger.info("Migration: added approval_token column")
+            except Exception:
+                pass  # already exists
+            try:
+                self._conn.execute("ALTER TABLE users ADD COLUMN unsubscribe_token TEXT")
+                self._conn.commit()
+                logger.info("Migration: added unsubscribe_token column")
             except Exception:
                 pass  # already exists
             if TURSO_URL and TURSO_TOKEN:
@@ -349,15 +357,16 @@ class Database:
                           categories=None, min_relevance: int = 5,
                           require_approval: bool = True) -> "User":
         now    = datetime.now(timezone.utc).isoformat()
-        token  = secrets.token_urlsafe(32) if require_approval else None
-        active = 0 if require_approval else 1
+        token           = secrets.token_urlsafe(32) if require_approval else None
+        unsub_token     = secrets.token_urlsafe(32)  # always generated
+        active          = 0 if require_approval else 1
         try:
             await self._exec(
                 "INSERT OR IGNORE INTO users "
-                "(email,name,active,categories,min_relevance,created_at,approval_token) "
-                "VALUES (?,?,?,?,?,?,?)",
+                "(email,name,active,categories,min_relevance,created_at,approval_token,unsubscribe_token) "
+                "VALUES (?,?,?,?,?,?,?,?)",
                 (email, name, active,
-                 json.dumps(categories or []), min_relevance, now, token),
+                 json.dumps(categories or []), min_relevance, now, token, unsub_token),
             )
         except Exception as e:
             logger.error(f"create_user error: {e}")
@@ -407,6 +416,7 @@ class Database:
             categories=json.loads(r.get("categories") or "[]"),
             min_relevance=r["min_relevance"],
             approval_token=r.get("approval_token"),
+            unsubscribe_token=r.get("unsubscribe_token"),
         )
 
     async def get_active_users(self) -> List["User"]:
@@ -434,6 +444,23 @@ class Database:
 
     async def delete_user(self, email: str):
         await self._exec("DELETE FROM users WHERE email=?", (email,))
+
+    async def unsubscribe_by_token(self, token: str) -> Optional["User"]:
+        """Unsubscribe a user via their personal unsubscribe token."""
+        rows = await self._query(
+            "SELECT * FROM users WHERE unsubscribe_token=?", (token,)
+        )
+        if not rows:
+            return None
+        r = rows[0]
+        user = User(
+            id=r["id"], email=r["email"], name=r["name"],
+            active=bool(r["active"]),
+            categories=json.loads(r.get("categories") or "[]"),
+            min_relevance=r["min_relevance"],
+        )
+        await self._exec("DELETE FROM users WHERE unsubscribe_token=?", (token,))
+        return user
 
     async def log_digest(self, email: str, article_count: int, status: str):
         now = datetime.now(timezone.utc).isoformat()
