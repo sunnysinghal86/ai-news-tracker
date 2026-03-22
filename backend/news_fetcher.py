@@ -55,33 +55,57 @@ HIGH_SIGNAL_KEYWORDS = [
     "raises", "funding", "acquired", "open source",
 ]
 
+# Modest source bonus — not to favour sources but to counteract
+# keyword-stuffed titles from community/tutorial sources like Medium.
+# Research sources get a small boost because their titles are academic
+# (no marketing keywords) but content is high quality.
+SOURCE_BONUS = {
+    "arXiv":                    3,   # academic titles lack keywords — needs a nudge
+    "MIT AI News":              2,
+    "Anthropic Blog":           2,   # official announcements, factual titles
+    "OpenAI Blog":              2,
+    "Google DeepMind":          2,
+    "Google AI Blog":           2,
+    "Google Research":          2,
+    "AWS AI Blog":              1,
+    "platformengineering.org":  1,
+    "NewsAPI":                  0,
+    "Medium":                   0,   # already benefits from keyword-rich titles
+}
+
 def quality_score(article: "RawArticle") -> float:
     """
     Pre-Claude quality score — decides which 20 articles get sent to Claude.
 
-    Deliberately source-agnostic: a PE.org article about Kubernetes+AI
-    scores the same as an OpenAI blog post about the same topic.
+    Problem: without source weighting, keyword-stuffed Medium titles dominate
+    because Medium writers optimise for buzzwords ("AI agent", "LLM reasoning").
+    Academic/official sources have plain descriptive titles and score poorly.
 
-    Factors (in order of importance):
-    1. HN upvotes — strongest community-validated quality signal
-    2. Keyword relevance in title — topic relevance to our audience
-    3. Recency — newer content is more useful
+    Solution: small source bonus to counteract title-keyword bias, NOT to
+    prefer sources by brand. arXiv gets +3 because its titles are academic,
+    not because arXiv is "better" than Medium per se.
+
+    Factors:
+    1. HN upvotes — strongest objective quality signal (community-validated)
+    2. Title keywords — topic relevance to platform/AI engineers
+    3. Small source bonus — counteracts title-keyword gaming
+    4. Recency — newer is more useful
     """
     score = 0.0
 
-    # 1. HN upvote score (0–10 range)
-    # Normalised: 100 upvotes = +5, 500+ upvotes = +10
+    # 1. HN upvote score (0–10)
     if article.score > 0:
         score += min(10.0, article.score / 50)
 
-    # 2. Title keyword relevance (0–6)
-    # More keyword hits = more relevant to our audience
+    # 2. Title keywords (0–6)
     title_lower = article.title.lower()
     kw_hits = sum(1 for kw in HIGH_SIGNAL_KEYWORDS if kw in title_lower)
-    score += min(6.0, kw_hits * 1.5)
+    score += min(3.0, kw_hits * 1.0)  # capped at 3 — prevents keyword stuffing dominance
 
-    # 3. Recency (0–3)
-    # Fresh content is more actionable
+    # 3. Small source bonus to counteract keyword-stuffed titles (0–3)
+    score += SOURCE_BONUS.get(article.source, 0)
+
+    # 4. Recency (0–3)
     from datetime import datetime, timezone, timedelta
     now = datetime.now(timezone.utc)
     age = now - article.published_at if article.published_at.tzinfo else timedelta(days=7)
