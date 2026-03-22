@@ -279,9 +279,18 @@ class Database:
         await self._run(_upsert)
 
     async def get_articles(self, limit=50, offset=0, category=None,
-                           source=None, min_relevance=0, search=None):
+                           source=None, min_relevance=0, search=None,
+                           days=30):
+        """
+        Return articles from the last `days` days (default 30).
+        Older articles are kept in DB for digest fallback but hidden from the UI feed.
+        Set days=0 to return all articles regardless of age.
+        """
         conditions = ["1=1"]
         params = []
+        if days:
+            conditions.append("fetched_at >= datetime('now', ? || ' days')")
+            params.append(f"-{days}")
         if category:
             conditions.append("category = ?")
             params.append(category)
