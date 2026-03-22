@@ -59,7 +59,20 @@ _VALID_CATS = {
     "Industry News", "Tutorial/Guide", "Platform/Infrastructure"
 }
 
-def _normalise_category(raw: str) -> str:
+# Sources that always produce research content — override Claude's category
+_RESEARCH_SOURCES = {"arXiv", "MIT AI News"}
+_COMPANY_BLOG_SOURCES = {"Anthropic Blog", "OpenAI Blog", "Google DeepMind",
+                          "Google Research", "Google AI Blog", "AWS AI Blog"}
+
+def _normalise_category(raw: str, source: str = "") -> str:
+    # Source-based overrides take priority over Claude's output
+    if source in _RESEARCH_SOURCES:
+        return "Research Paper"
+    if source in _COMPANY_BLOG_SOURCES:
+        # Company blogs publish both models and products — trust Claude but fix bad defaults
+        if raw in _VALID_CATS and raw != "Industry News":
+            return raw
+        return "AI Model"  # safer default for company blogs than Industry News
     if not raw:
         return "Industry News"
     if raw in _VALID_CATS:
@@ -261,11 +274,12 @@ class Database:
                         is_product_or_tool=excluded.is_product_or_tool,
                         product_name=excluded.product_name,
                         competitors=excluded.competitors,
-                        competitive_advantage=excluded.competitive_advantage""",
+                        competitive_advantage=excluded.competitive_advantage,
+                        fetched_at=datetime('now')""",
                     (
                         a.id, a.title, a.url, a.source, a.author, a.score,
                         a.published_at, a.summary,
-                        _normalise_category(a.category),
+                        _normalise_category(a.category, a.source),
                         json.dumps(a.tags or []),
                         a.relevance_score, int(a.is_product_or_tool),
                         a.product_name,
@@ -481,7 +495,7 @@ class Database:
 
     def _to_dict(self, row: Row) -> dict:
         d = dict(row)
-        d["category"] = _normalise_category(d.get("category", ""))
+        d["category"] = _normalise_category(d.get("category", ""), d.get("source", ""))
         for f in ("tags", "competitors"):
             if d.get(f):
                 try:

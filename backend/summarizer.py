@@ -184,14 +184,20 @@ async def _analyse_article(article: RawArticle, session: aiohttp.ClientSession) 
     prompt = (
         "Analyse this AI/tech article. Return ONLY valid JSON, no markdown.\n"
         f"Title: {article.title}\nSource: {article.source}\nContent: {content_text}\n\n"
-        "Categories: Product/Tool=SDK/library/framework/CLI/SaaS; AI Model=LLM/image/embedding model; "
-        "Research Paper=academic/preprint; Tutorial/Guide=how-to/guide; "
-        "Platform/Infrastructure=MLOps/deployment/cloud-AI; Industry News=funding/acquisitions/opinion only\n"
+        f"{'IMPORTANT: This is from arXiv — category MUST be Research Paper.\n' if article.source == 'arXiv' else ''}"
+        f"{'IMPORTANT: This is from MIT AI News — category MUST be Research Paper.\n' if article.source == 'MIT AI News' else ''}"
+        "Pick category (use EXACT name only):\n"
+        "  Product/Tool — SDK, library, framework, CLI, SaaS, developer tool\n"
+        "  AI Model — LLM, image model, embedding model, AI system\n"
+        "  Research Paper — academic paper, preprint, study\n"
+        "  Tutorial/Guide — how-to, guide, best practices\n"
+        "  Platform/Infrastructure — MLOps, deployment, cloud AI, DevOps\n"
+        "  Industry News — funding, acquisition, company news, opinion\n"
         "is_product_or_tool=true for Product/Tool, AI Model, Platform/Infrastructure; "
         "if true include 2-3 named competitors + specific competitive_advantage\n"
-        "relevance: 9-10=AI infra/MLOps/platform-eng, 7-8=major model/framework, 5-6=AI news, 1-4=weak\n\n"
+        "relevance: 9-10=AI infra/MLOps, 7-8=major model/framework, 5-6=AI news, 1-4=weak\n\n"
         '{"summary":"2-3 eng-focused sentences",'
-        '"category":"<one of the 6 above>",'
+        '"category":"<EXACT name from list above, no extra text>",'
         '"tags":["t1","t2","t3"],'
         '"relevance_score":<1-10>,'
         '"is_product_or_tool":<bool>,'
