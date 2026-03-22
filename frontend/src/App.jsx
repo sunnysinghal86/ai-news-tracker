@@ -62,6 +62,16 @@ const CAT_ICON = {
   "Product/Tool": "◈", "AI Model": "◉", "Research Paper": "◎",
   "Industry News": "◆", "Tutorial/Guide": "▶", "Platform/Infrastructure": "▣",
 };
+function timeAgo(dateStr) {
+  if (!dateStr) return "";
+  const diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
+  if (diff < 3600)    return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400)   return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 172800)  return "Yesterday";
+  if (diff < 604800)  return `${Math.floor(diff / 86400)}d ago`;
+  return new Date(dateStr).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
 const SRC_STYLE = {
   "arXiv":                   { bg: "#1a3a5c", label: "arXiv" },
   "NewsAPI":                 { bg: "#b5860d", label: "News" },
@@ -155,6 +165,9 @@ function ArticleCard({ article, expanded, onToggle, isLead }) {
         <Stamp bg={src.bg}>{src.label}</Stamp>
         <span style={{ fontSize: "9.5px", color: T.muted, textTransform: "uppercase", letterSpacing: "0.12em", fontFamily: "'Barlow Condensed', sans-serif" }}>
           {icon} {article.category}
+        </span>
+        <span style={{ fontSize: "9.5px", color: T.faint, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.06em" }}>
+          {timeAgo(article.published_at || article.fetched_at)}
         </span>
         <span style={{ marginLeft: "auto" }}><Stars score={article.relevance_score} /></span>
       </div>
@@ -494,8 +507,8 @@ export default function App() {
             ))}
           </div>
           <div style={{ display: "flex" }}>
-            <button onClick={doRefresh} disabled={refreshing} style={{ padding: "10px 16px", border: "none", borderLeft: `1px solid ${T.rule}`, background: "transparent", color: refreshing ? T.faint : T.muted, cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "11px", letterSpacing: "0.1em" }}>
-              {refreshing ? "⟳ REFRESHING…" : "⟳ REFRESH"}
+            <button onClick={doRefresh} disabled={refreshing} style={{ padding: "10px 18px", border: "none", borderLeft: `1px solid ${T.rule}`, background: refreshing ? "transparent" : T.ink, color: refreshing ? T.faint : T.paper, cursor: refreshing ? "not-allowed" : "pointer", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "11px", letterSpacing: "0.1em", transition: "all 0.2s" }}>
+              {refreshing ? "⟳ REFRESHING…" : "⟳ REFRESH NOW"}
             </button>
             <button onClick={() => setShowSub(true)} style={{ padding: "10px 20px", border: "none", background: T.red, color: T.paper, cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "11px", letterSpacing: "0.15em" }}>
               SUBSCRIBE →
