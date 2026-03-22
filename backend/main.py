@@ -100,30 +100,18 @@ async def refresh_news_job():
             logger.info("No new articles — refresh complete")
             return
 
-        # Step 4 — cap BEFORE enriching with source diversity
-        # Sort all new articles by quality score
+        # Step 4 — take top 20 by pure quality score
+        # quality_score = source authority (Anthropic=10, Medium=5) +
+        #                 title keywords + recency bonus
+        # No artificial source caps — merit decides.
+        # Medium scores 5 base vs Anthropic 10, so it only wins if everything
+        # higher-quality is already in the DB (already_seen).
         new_articles.sort(key=quality_score, reverse=True)
-
-        # Walk down the sorted list, enforce max 3 articles per source
-        # This guarantees variety — PE.org can't take all 20 slots even if
-        # it has 15 high-scoring articles
-        cap = 20
-        MAX_PER_SOURCE = 3
-        if len(new_articles) > cap:
-            selected = []
-            source_counts = {}
-            for a in new_articles:
-                if len(selected) >= cap:
-                    break
-                count = source_counts.get(a.source, 0)
-                if count < MAX_PER_SOURCE:
-                    selected.append(a)
-                    source_counts[a.source] = count + 1
-            new_articles = selected
-            logger.info(
-                f"Capped to {len(new_articles)} articles "
-                f"(max {MAX_PER_SOURCE}/source): {dict(source_counts)}"
-            )
+        new_articles = new_articles[:20]
+        source_dist = {}
+        for a in new_articles:
+            source_dist[a.source] = source_dist.get(a.source, 0) + 1
+        logger.info(f"Top 20 by quality score: {source_dist}")
 
         # Step 5 — enrich content only for capped set (trafilatura, no API cost)
         new_articles = await enrich_all(new_articles)

@@ -38,65 +38,61 @@ AI_KEYWORDS = [
     "context window", "tokens", "open source model", "weights"
 ]
 
-# ── High-value keywords that signal product launches / model releases ──────────
+# ── High-value keywords that signal important AI/platform engineering content ──
+# Used for pre-Claude scoring only — weights title relevance before Claude sees it
 HIGH_SIGNAL_KEYWORDS = [
+    # Model/product launches
     "launches", "releases", "announces", "unveils", "introduces",
     "new model", "new version", "open source", "open-source",
-    "beats", "outperforms", "state of the art", "sota",
-    "gpt-4", "gpt-5", "claude", "gemini", "llama", "mistral",
-    "agent", "multimodal", "reasoning", "benchmark",
-    "raises", "funding", "series", "acquired",
+    # Performance signals
+    "beats", "outperforms", "state of the art", "sota", "benchmark",
+    # Specific technologies relevant to our audience
+    "claude", "gemini", "llama", "mistral", "gpt",
+    "agent", "multimodal", "reasoning", "rag", "fine-tuning",
+    "kubernetes", "platform engineering", "mlops", "inference",
+    "langchain", "llamaindex", "bedrock", "sagemaker",
+    # Business signals
+    "raises", "funding", "acquired", "open source",
 ]
-
-# ── Source quality weights ─────────────────────────────────────────────────────
-SOURCE_QUALITY = {
-    # Company blogs — highest signal (10)
-    "Anthropic Blog":          10,
-    "OpenAI Blog":             10,
-    "Google DeepMind":         10,
-    # Google properties (9)
-    "Google AI Blog":           9,
-    "Google Research":          9,
-    # Cloud AI / Research (8)
-    "AWS AI Blog":              8,
-    "arXiv":                    8,
-    # Research news (7)
-    "MIT AI News":              7,
-    # Platform engineering (7) — on par with research sources
-    "platformengineering.org":  7,
-    # Community / industry (5)
-    "NewsAPI":                  5,
-    "Medium":                   5,
-}
 
 def quality_score(article: "RawArticle") -> float:
     """
-    Compute a quality score for pre-filtering before Claude.
-    Combines source authority, keyword strength, HN score, and recency.
-    Higher = better, send to Claude first.
+    Pre-Claude quality score — decides which 20 articles get sent to Claude.
+
+    Deliberately source-agnostic: a PE.org article about Kubernetes+AI
+    scores the same as an OpenAI blog post about the same topic.
+
+    Factors (in order of importance):
+    1. HN upvotes — strongest community-validated quality signal
+    2. Keyword relevance in title — topic relevance to our audience
+    3. Recency — newer content is more useful
     """
     score = 0.0
 
-    # 1. Source quality base score (0-10)
-    score += SOURCE_QUALITY.get(article.source, 4)
-
-    # 2. HN score bonus — normalise to 0-5 range (HN scores typically 10-500)
+    # 1. HN upvote score (0–10 range)
+    # Normalised: 100 upvotes = +5, 500+ upvotes = +10
     if article.score > 0:
-        score += min(5.0, article.score / 100)
+        score += min(10.0, article.score / 50)
 
-    # 3. High-signal keyword in title (max +3)
+    # 2. Title keyword relevance (0–6)
+    # More keyword hits = more relevant to our audience
     title_lower = article.title.lower()
     kw_hits = sum(1 for kw in HIGH_SIGNAL_KEYWORDS if kw in title_lower)
-    score += min(3.0, kw_hits * 1.5)
+    score += min(6.0, kw_hits * 1.5)
 
-    # 4. Recency bonus — articles from last 24h get +2, last 3 days +1
+    # 3. Recency (0–3)
+    # Fresh content is more actionable
     from datetime import datetime, timezone, timedelta
     now = datetime.now(timezone.utc)
     age = now - article.published_at if article.published_at.tzinfo else timedelta(days=7)
-    if age < timedelta(hours=24):
+    if age < timedelta(hours=12):
+        score += 3.0
+    elif age < timedelta(hours=24):
         score += 2.0
     elif age < timedelta(days=3):
         score += 1.0
+
+    return score
 
     return score
 
@@ -192,26 +188,26 @@ async def fetch_hackernews(session: aiohttp.ClientSession) -> List[RawArticle]:
 # arXiv
 # ─────────────────────────────────────────────
 async def fetch_arxiv(session: aiohttp.ClientSession) -> List[RawArticle]:
-    """Fetch latest AI papers from arXiv using category filter (more reliable than full-text search)"""
+    """Fetch latest AI papers from arXiv — uses its own session to avoid shared timeout."""
     articles = []
     try:
-        # cat:cs.AI+OR+cat:cs.LG+OR+cat:cs.CL is the most reliable arXiv query format
         url = "https://export.arxiv.org/api/query"
         params = {
-            "search_query": "cat:cs.AI+OR+cat:cs.LG+OR+cat:cs.CL",  # + required for arXiv API
+            "search_query": "cat:cs.AI OR cat:cs.LG OR cat:cs.CL",
             "sortBy": "submittedDate",
             "sortOrder": "descending",
-            "max_results": 20,
+            "max_results": 15,
             "start": 0,
         }
-        async with session.get(
-            url, params=params,
-            timeout=aiohttp.ClientTimeout(total=15)
-        ) as resp:
-            if resp.status != 200:
-                logger.warning(f"arXiv returned HTTP {resp.status}")
-                return []
-            text = await resp.text()
+        # arXiv gets its own session — avoids shared 30s timeout being consumed
+        # by concurrent requests to other sources
+        arxiv_timeout = aiohttp.ClientTimeout(total=25)
+        async with aiohttp.ClientSession(timeout=arxiv_timeout) as arxiv_session:
+            async with arxiv_session.get(url, params=params) as resp:
+                if resp.status != 200:
+                    logger.warning(f"arXiv returned HTTP {resp.status}")
+                    return []
+                text = await resp.text()
         
         feed = feedparser.parse(text)
         for entry in feed.entries:
@@ -298,8 +294,6 @@ async def fetch_newsapi(session: aiohttp.ClientSession) -> List[RawArticle]:
 # ─────────────────────────────────────────────
 MEDIUM_FEEDS = [
     "https://medium.com/feed/tag/artificial-intelligence",
-    "https://medium.com/feed/tag/machine-learning",
-    "https://medium.com/feed/tag/platform-engineering",
     "https://medium.com/feed/tag/mlops",
 ]
 
@@ -309,7 +303,7 @@ async def fetch_medium(session: aiohttp.ClientSession) -> List[RawArticle]:
     for feed_url in MEDIUM_FEEDS:
         try:
             # Use rss2json proxy (free, no auth needed)
-            proxy = f"https://api.rss2json.com/v1/api.json?rss_url={feed_url}&count=10"
+            proxy = f"https://api.rss2json.com/v1/api.json?rss_url={feed_url}&count=5"
             async with session.get(proxy, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 data = await resp.json()
             
@@ -582,7 +576,7 @@ async def fetch_all_news() -> List[RawArticle]:
     
     all_articles = []
     seen_ids = set()
-    
+
     for result in results:
         if isinstance(result, Exception):
             logger.error(f"Source error: {result}")
@@ -591,8 +585,13 @@ async def fetch_all_news() -> List[RawArticle]:
             if article.id not in seen_ids:
                 seen_ids.add(article.id)
                 all_articles.append(article)
-    
-    # Sort by computed quality score (source authority + keywords + HN score + recency)
+
+    # Sort by quality score — source authority + title keywords + recency
     all_articles.sort(key=quality_score, reverse=True)
+
+    source_counts = {}
+    for a in all_articles:
+        source_counts[a.source] = source_counts.get(a.source, 0) + 1
     logger.info(f"Total unique articles: {len(all_articles)}")
+    logger.info(f"Source breakdown: {source_counts}")
     return all_articles
