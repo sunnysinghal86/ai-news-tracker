@@ -170,6 +170,34 @@ async def reject_user(token: str):
     )
 
 
+# ── Unsubscribe ──────────────────────────────────────────────────────────────
+
+@router.get("/unsubscribe", response_class=HTMLResponse)
+async def unsubscribe(token: str):
+    """
+    One-click unsubscribe endpoint — linked from every digest email footer.
+    Uses a personal token so no login required.
+    """
+    async with get_db() as db:
+        user = await db.unsubscribe_by_token(token)
+
+    if not user:
+        return _html_response(
+            title="Link Expired",
+            message="This unsubscribe link is invalid or has already been used.",
+            colour="#ef4444",
+            icon="⚠️",
+        )
+
+    logger.info(f"Unsubscribed: {user.email}")
+    return _html_response(
+        title="Unsubscribed",
+        message=f"{user.name}, you've been removed from AI Signal. You won't receive any more digest emails.",
+        colour="#6b7280",
+        icon="✅",
+    )
+
+
 # ── List pending (admin) ──────────────────────────────────────────────────────
 
 @router.get("/pending")
