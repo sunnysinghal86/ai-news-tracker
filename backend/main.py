@@ -100,15 +100,28 @@ async def refresh_news_job():
             logger.info("No new articles — refresh complete")
             return
 
-        # Step 4 — cap BEFORE enriching using quality score
-        # quality_score combines: source authority + HN score + keyword strength + recency
-        # arXiv (weight=8) and MIT AI News (weight=7) naturally rank above Medium (5)
-        # and PE.org (4) so no manual slot reservation is needed
+        # Step 4 — cap BEFORE enriching with guaranteed research slots
         cap = 20
         if len(new_articles) > cap:
-            new_articles.sort(key=quality_score, reverse=True)
-            new_articles = new_articles[:cap]
-            logger.info(f"Capped to top {cap} articles by quality score")
+            # Separate research sources — arXiv titles score low on keywords
+            # (academic titles rarely contain "launches" or "beats") so we
+            # reserve 4 slots to guarantee Research & Models column never empties
+            research_sources = {"arXiv", "MIT AI News"}
+            research = sorted(
+                [a for a in new_articles if a.source in research_sources],
+                key=quality_score, reverse=True
+            )
+            others = sorted(
+                [a for a in new_articles if a.source not in research_sources],
+                key=quality_score, reverse=True
+            )
+            research_slots = min(5, len(research))
+            other_slots    = cap - research_slots
+            new_articles   = others[:other_slots] + research[:research_slots]
+            logger.info(
+                f"Capped to {len(new_articles)} articles "
+                f"({other_slots} quality-scored + {research_slots} research)"
+            )
 
         # Step 5 — enrich content only for capped set (trafilatura, no API cost)
         new_articles = await enrich_all(new_articles)

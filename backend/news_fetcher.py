@@ -198,7 +198,7 @@ async def fetch_arxiv(session: aiohttp.ClientSession) -> List[RawArticle]:
         # cat:cs.AI+OR+cat:cs.LG+OR+cat:cs.CL is the most reliable arXiv query format
         url = "https://export.arxiv.org/api/query"
         params = {
-            "search_query": "cat:cs.AI OR cat:cs.LG OR cat:cs.CL",
+            "search_query": "cat:cs.AI+OR+cat:cs.LG+OR+cat:cs.CL",  # + required for arXiv API
             "sortBy": "submittedDate",
             "sortOrder": "descending",
             "max_results": 20,
