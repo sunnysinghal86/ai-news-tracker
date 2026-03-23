@@ -264,17 +264,25 @@ async def fetch_arxiv(session: aiohttp.ClientSession) -> List[RawArticle]:
 # ─────────────────────────────────────────────
 # NewsAPI
 # ─────────────────────────────────────────────
+# Reputable tech/AI news domains for NewsAPI — prevents PyPI/Yahoo/spam results
+NEWSAPI_DOMAINS = (
+    "techcrunch.com,wired.com,theverge.com,arstechnica.com,"
+    "venturebeat.com,thenextweb.com,zdnet.com,infoworld.com,"
+    "technologyreview.com,spectrum.ieee.org"
+)
+
 async def fetch_newsapi(session: aiohttp.ClientSession) -> List[RawArticle]:
-    """Fetch from NewsAPI (requires free API key)"""
+    """Fetch AI/tech news from reputable sources via NewsAPI."""
     if not NEWS_API_KEY:
         logger.warning("NewsAPI key not set, skipping")
         return []
-    
+
     articles = []
     try:
         url = "https://newsapi.org/v2/everything"
         params = {
-            "q": "AI OR LLM OR \"machine learning\" OR \"platform engineering\" OR MLOps",
+            "q": "artificial intelligence OR machine learning OR LLM OR MLOps",
+            "domains": NEWSAPI_DOMAINS,   # restrict to reputable sources only
             "language": "en",
             "sortBy": "publishedAt",
             "pageSize": 20,
@@ -282,30 +290,29 @@ async def fetch_newsapi(session: aiohttp.ClientSession) -> List[RawArticle]:
         }
         async with session.get(url, params=params) as resp:
             data = await resp.json()
-        
+
         for item in data.get("articles", []):
             title = fix_encoding(item.get("title", "") or "") or ""
-            desc = item.get("description", "") or ""
-            if not is_relevant(title, desc):
+            desc  = item.get("description", "") or ""
+            if not title or not is_relevant(title, desc):
                 continue
-            
+
             pub = item.get("publishedAt", "")
             try:
                 published = datetime.fromisoformat(pub.replace("Z", "+00:00"))
-            except:
+            except Exception:
                 published = datetime.now(timezone.utc)
-            
-            source_name = item.get("source", {}).get("name", "NewsAPI")
+
             articles.append(RawArticle(
                 id=gen_id(item.get("url", "")),
                 title=title,
                 url=item.get("url", ""),
-                source=f"NewsAPI / {source_name}",
+                source="NewsAPI",          # flat name — no per-domain suffix
                 published_at=published,
                 content=strip_html(desc),
                 author=item.get("author", ""),
                 tags=["news"],
-                score=0
+                score=0,
             ))
         logger.info(f"NewsAPI: {len(articles)} articles")
     except Exception as e:

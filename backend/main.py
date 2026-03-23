@@ -202,10 +202,22 @@ async def debug():
 
 @app.post("/api/clear-articles")
 async def clear_articles():
-    """Delete all articles from DB — use when DB has stale/corrupt data."""
+    """Delete all articles — use when DB has stale/corrupt data."""
     async with get_db() as db:
         await db._exec("DELETE FROM articles")
     return {"message": "All articles deleted — trigger a refresh to repopulate"}
+
+
+@app.post("/api/clean-sources")
+async def clean_sources():
+    """Remove articles from bad NewsAPI sub-sources (PyPI, Yahoo, etc.)"""
+    async with get_db() as db:
+        await db._exec(
+            "DELETE FROM articles WHERE source LIKE 'NewsAPI / %'"
+        )
+        rows = await db._query("SELECT COUNT(*) as n FROM articles")
+        remaining = rows[0]["n"] if rows else 0
+    return {"message": f"Removed bad NewsAPI sources. {remaining} articles remain."}
 
 
 @app.get("/api/summary")

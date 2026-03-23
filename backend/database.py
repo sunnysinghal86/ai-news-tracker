@@ -320,10 +320,24 @@ class Database:
             conditions.append("(title LIKE ? OR summary LIKE ?)")
             params.extend([f"%{search}%", f"%{search}%"])
         where = " AND ".join(conditions)
+        # Use ROW_NUMBER to limit max 5 articles per source in UI results.
+        # This prevents any single source (Medium: 61 articles) from dominating
+        # the feed even when they have high relevance scores.
+        # The outer query then applies the user's requested limit/offset.
+        inner_where = where
         rows = await self._query(
-            f"SELECT * FROM articles WHERE {where} "
-            f"ORDER BY relevance_score DESC, published_at DESC "
-            f"LIMIT ? OFFSET ?",
+            f"""SELECT * FROM (
+                SELECT *,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY source
+                        ORDER BY relevance_score DESC, published_at DESC
+                    ) as rn
+                FROM articles
+                WHERE {inner_where}
+            ) ranked
+            WHERE rn <= 5
+            ORDER BY relevance_score DESC, published_at DESC
+            LIMIT ? OFFSET ?""",
             params + [limit, offset]
         )
         return [self._to_dict(r) for r in rows]
