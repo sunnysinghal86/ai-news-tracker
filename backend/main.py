@@ -172,6 +172,42 @@ async def health():
     return {"status": "healthy"}
 
 
+@app.get("/api/debug")
+async def debug():
+    """Shows exactly what articles are in DB, their dates, sources, and what the UI sees."""
+    async with get_db() as db:
+        # What's in DB total
+        all_rows = await db._query(
+            "SELECT source, substr(published_at,1,10) as pub_date, "
+            "substr(fetched_at,1,10) as fetch_date, relevance_score, "
+            "substr(title,1,60) as title "
+            "FROM articles ORDER BY published_at DESC LIMIT 50"
+        )
+        # What passes the 30-day filter
+        visible = await db._query(
+            "SELECT source, COUNT(*) as n FROM articles "
+            "WHERE substr(published_at,1,10) >= date('now','-30 days') "
+            "GROUP BY source ORDER BY n DESC"
+        )
+        # What get_summarised_ids returns
+        seen_ids = await db.get_summarised_ids()
+
+    return {
+        "total_in_db": len(all_rows),
+        "visible_last_30_days": {r["source"]: r["n"] for r in visible},
+        "summarised_ids_count": len(seen_ids),
+        "all_articles": [dict(r) for r in all_rows],
+    }
+
+
+@app.post("/api/clear-articles")
+async def clear_articles():
+    """Delete all articles from DB — use when DB has stale/corrupt data."""
+    async with get_db() as db:
+        await db._exec("DELETE FROM articles")
+    return {"message": "All articles deleted — trigger a refresh to repopulate"}
+
+
 @app.get("/api/summary")
 async def get_summary():
     """Combined stats + config — reduces page load from 4 API calls to 2."""
