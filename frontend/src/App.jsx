@@ -73,14 +73,17 @@ function timeAgo(dateStr) {
 }
 
 const SRC_STYLE = {
-    "NewsAPI":                 { bg: "#b5860d", label: "News" },
+  "NewsAPI":                 { bg: "#b5860d", label: "News" },
   "Medium":                  { bg: "#1a1208", label: "Medium" },
   "platformengineering.org": { bg: "#1c4d35", label: "PE.org" },
   "Anthropic Blog":          { bg: "#c17f2a", label: "Anthropic" },
   "OpenAI Blog":             { bg: "#1a6b4a", label: "OpenAI" },
-      "AWS AI Blog":             { bg: "#8a3a00", label: "AWS" },
+  "AWS AI Blog":             { bg: "#8a3a00", label: "AWS" },
   "Google AI Blog":          { bg: "#1a6b8a", label: "Google AI" },
-  };
+  "Stack Overflow Blog":     { bg: "#e87922", label: "StackOverflow" },
+  "InfoQ":                   { bg: "#4a4a8a", label: "InfoQ" },
+  "The New Stack":           { bg: "#1a4a6a", label: "New Stack" },
+};
 function srcFor(s) {
   const k = Object.keys(SRC_STYLE).find(k => s?.includes(k)) || "NewsAPI";
   return SRC_STYLE[k];
@@ -518,7 +521,7 @@ export default function App() {
                 style={{ flex: "1", minWidth: 0, padding: "7px 0", border: "none", borderBottom: `2px solid ${T.ink}`, background: "transparent", color: T.ink, fontSize: "13px", outline: "none", fontFamily: "Georgia, serif" }} />
               {[
                 { k: "category", opts: ["Product/Tool","AI Model","Research Paper","Industry News","Tutorial/Guide","Platform/Infrastructure"], ph: "All sections" },
-                { k: "source",   opts: ["Medium","platformengineering.org","Anthropic Blog","OpenAI Blog","Google AI Blog","AWS AI Blog","NewsAPI"], ph: "All sources" },
+                { k: "source",   opts: ["Medium","platformengineering.org","Anthropic Blog","OpenAI Blog","Google AI Blog","AWS AI Blog","NewsAPI","Stack Overflow Blog","InfoQ","The New Stack"], ph: "All sources" },
               ].map(({ k, opts, ph }) => (
                 <select key={k} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))}
                   style={{ flex: "1", minWidth: 0, padding: "7px 6px", border: "none", borderBottom: `2px solid ${filters[k] ? T.ink : T.rule}`, background: "transparent", color: filters[k] ? T.ink : T.muted, fontSize: "12px", cursor: "pointer", outline: "none", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.06em" }}>
@@ -552,7 +555,7 @@ export default function App() {
                   {[
                     { label: "Articles Indexed",  val: stats?.total_articles || 0 },
                     { label: "Products & Tools",   val: stats?.product_articles || 0 },
-                    { label: "Sources Active",     val: 7 },
+                    { label: "Sources Active",     val: 10 },
                     { label: "Subscribers",        val: usersData?.users?.length || 0 },
                   ].map(({ label, val }) => (
                     <div key={label} style={{ padding: "18px 0 16px", borderRight: `1px solid ${T.rule}`, textAlign: "center" }}>
