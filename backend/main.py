@@ -4,6 +4,7 @@ AI News Tracker - FastAPI Backend
 
 import os
 import asyncio
+import aiohttp
 import logging
 from contextlib import asynccontextmanager
 
@@ -121,11 +122,16 @@ async def refresh_news_job():
         # CRITICAL: scoring must happen before filtering already-seen articles.
         # If we filter first, only Medium (always fresh) survives and dominates.
         raw_articles.sort(key=quality_score, reverse=True)
-        top_articles = raw_articles[:20]
 
-        source_dist = {}
-        for a in top_articles:
-            source_dist[a.source] = source_dist.get(a.source, 0) + 1
+        # Pick top 20 with max 5 per source — prevents any single source
+        # (e.g. arXiv with high bonus) from flooding all 20 slots
+        top_articles, source_dist = [], {}
+        for a in raw_articles:
+            if len(top_articles) >= 20:
+                break
+            if source_dist.get(a.source, 0) < 5:
+                top_articles.append(a)
+                source_dist[a.source] = source_dist.get(a.source, 0) + 1
         logger.info(f"Top 20 by quality score: {source_dist}")
 
         # Step 3 — from the top 20, find which ones Claude hasn't seen yet
