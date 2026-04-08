@@ -351,17 +351,23 @@ class Database:
 
     async def get_top_articles(self, limit=30, min_relevance=5,
                                categories=None, hours=24):
-        # Build source filter — only serve from active sources
+        """
+        Fetch top articles for digest with progressive fallback:
+        1. Try last 24h / 48h / 7d with subscriber's min_relevance
+        2. If still < 10, relax min_relevance by 1 point and retry
+        3. Final fallback: all time, min_relevance floored at 5
+        Always returns from active sources only.
+        """
         src_placeholders = ",".join("?" * len(self.ACTIVE_SOURCES))
         src_clause = f"AND source IN ({src_placeholders})"
 
-        for window in [hours, 48, 168]:
-            params = [min_relevance, window] + list(self.ACTIVE_SOURCES)
+        def build_query(window, score_floor):
             cat_clause = ""
+            params = [score_floor, window] + list(self.ACTIVE_SOURCES)
             if categories:
                 placeholders = ",".join("?" * len(categories))
                 cat_clause = f"AND category IN ({placeholders})"
-                params = [min_relevance, window] + list(self.ACTIVE_SOURCES) + list(categories)
+                params += list(categories)
             query = f"""
                 SELECT * FROM articles
                 WHERE relevance_score >= ?
@@ -372,13 +378,30 @@ class Database:
                 ORDER BY relevance_score DESC, fetched_at DESC
                 LIMIT {limit}
             """
-            rows = await self._query(query, params)
+            return query, params
+
+        # Phase 1 — try with subscriber's score, expanding time window
+        for window in [hours, 48, 168]:
+            query, params = build_query(window, min_relevance)
+            rows     = await self._query(query, params)
             articles = [self._to_dict(r) for r in rows]
-            if len(articles) >= 5:
-                logger.info(f"Digest: {len(articles)} articles from last {window}h")
+            if len(articles) >= 10:
+                logger.info(f"Digest: {len(articles)} articles (last {window}h, min={min_relevance})")
                 return articles
-        # Fallback — no time filter but still restrict to active sources
-        params = [min_relevance] + list(self.ACTIVE_SOURCES) + [limit]
+
+        # Phase 2 — relax min_relevance by 1 point, try 7 days
+        relaxed = max(5, min_relevance - 1)
+        if relaxed < min_relevance:
+            query, params = build_query(168, relaxed)
+            rows     = await self._query(query, params)
+            articles = [self._to_dict(r) for r in rows]
+            if len(articles) >= 10:
+                logger.info(f"Digest: {len(articles)} articles (relaxed to min={relaxed})")
+                return articles
+
+        # Phase 3 — final fallback: no time limit, floor at 5
+        floor = max(5, min_relevance - 2)
+        params = [floor] + list(self.ACTIVE_SOURCES) + [limit]
         rows = await self._query(
             f"SELECT * FROM articles WHERE relevance_score >= ? "
             f"AND summary IS NOT NULL AND LENGTH(summary) > 40 "
@@ -386,7 +409,9 @@ class Database:
             f"ORDER BY relevance_score DESC LIMIT ?",
             params,
         )
-        return [self._to_dict(r) for r in rows]
+        articles = [self._to_dict(r) for r in rows]
+        logger.info(f"Digest fallback: {len(articles)} articles (floor={floor}, no time limit)")
+        return articles
 
     async def get_stats(self):
         rows  = await self._query("SELECT COUNT(*) as n FROM articles")
