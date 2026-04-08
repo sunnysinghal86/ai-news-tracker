@@ -16,11 +16,7 @@ async def get_config():
         "refresh_interval_hours": 1,
         "digest_time_utc":        "08:00",
         "max_users":              100,
-        "sources": [
-            "arXiv", "NewsAPI", "Medium", "platformengineering.org",
-            "Anthropic Blog", "OpenAI Blog", "Google DeepMind",
-            "Google Research", "AWS AI Blog", "Google AI Blog", "MIT AI News",
-        ],
+        "sources": ["Medium", "platformengineering.org", "Anthropic Blog", "OpenAI Blog", "Google AI Blog", "AWS AI Blog", "NewsAPI", "Stack Overflow Blog", "InfoQ", "The New Stack"],
     }
 
 
