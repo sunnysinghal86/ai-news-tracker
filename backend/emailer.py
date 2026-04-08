@@ -14,145 +14,160 @@ logger = logging.getLogger(__name__)
 # Keys read fresh on every call — never cached at import time
 
 
-def build_html_email(user_name: str, articles: List[dict], unsubscribe_token: str = "") -> str:
-    """Generate beautiful HTML email digest"""
-    app_url  = os.getenv("APP_URL", "https://ai-signal.app")
-    api_url  = os.getenv("API_URL", "https://api.ai-signal.app")
-    date_str = datetime.now().strftime("%A, %B %d, %Y")
-    
-    # Group by category
-    by_category = {}
-    for a in articles:
-        cat = a.get("category", "Industry News")
-        by_category.setdefault(cat, []).append(a)
-    
-    # Build article cards
-    def relevance_bar(score):
-        filled = "●" * score + "○" * (10 - score)
-        return filled
-    
-    def competitor_html(article):
-        competitors = article.get("competitors", [])
-        if not competitors or not article.get("is_product_or_tool"):
-            return ""
-        
-        rows = ""
-        for c in competitors[:3]:
-            rows += f"""
-            <tr>
-              <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;font-weight:600;color:#1a1a2e;font-size:13px;">{c.get('name','')}</td>
-              <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;color:#555;font-size:12px;">{c.get('description','')}</td>
-              <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;color:#2d6a4f;font-size:12px;">{c.get('comparison','')}</td>
-            </tr>"""
-        
-        adv = article.get("competitive_advantage", "")
-        adv_html = f"""<div style="margin-top:8px;padding:8px 12px;background:#f0fdf4;border-left:3px solid #22c55e;border-radius:0 6px 6px 0;font-size:12px;color:#166534;"><strong>🏆 Key Advantage:</strong> {adv}</div>""" if adv else ""
-        
-        return f"""
-        <div style="margin-top:12px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
-          <div style="background:#f8f9fa;padding:8px 12px;font-size:11px;font-weight:700;color:#6b7280;letter-spacing:0.05em;text-transform:uppercase;">⚔️ Competitor Analysis</div>
-          <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
-            <thead>
-              <tr style="background:#fafafa;">
-                <th style="padding:6px 8px;text-align:left;font-size:11px;color:#9ca3af;font-weight:600;">Competitor</th>
-                <th style="padding:6px 8px;text-align:left;font-size:11px;color:#9ca3af;font-weight:600;">About</th>
-                <th style="padding:6px 8px;text-align:left;font-size:11px;color:#9ca3af;font-weight:600;">How This Differs</th>
-              </tr>
-            </thead>
-            <tbody>{rows}</tbody>
-          </table>
-          {adv_html}
-        </div>"""
-    
-    def article_card(a):
-        rel_score = a.get("relevance_score", 5)
-        rel_color = "#22c55e" if rel_score >= 7 else "#f59e0b" if rel_score >= 5 else "#9ca3af"
-        tags = a.get("tags", [])[:3]
-        tag_html = " ".join([f'<span style="display:inline-block;padding:2px 8px;background:#f3f4f6;border-radius:99px;font-size:10px;color:#6b7280;margin-right:4px;">{t}</span>' for t in tags])
-        
-        source_badge_colors = {
-            "Hacker News": "#ff6600", "arXiv": "#b31b1b",
-            "Medium": "#000000", "NewsAPI": "#2563eb"
+def build_html_email(user_name, digest, unsubscribe_token=""):
+    app_url = os.getenv("APP_URL", "https://ai-signal.app")
+    api_url = os.getenv("API_URL", "https://api.ai-signal.app")
+    date_str = datetime.now().strftime("%A, %B %d")
+    stories = digest.get("stories", [])
+    sleeper = digest.get("sleeper")
+    trends  = digest.get("trends", [])
+    total   = digest.get("article_count", len(stories))
+
+    def score_dot(score):
+        color = "#22c55e" if score >= 8 else "#f59e0b" if score >= 6 else "#9ca3af"
+        return f'<span style="color:{color};font-weight:700;">{score}/10</span>'
+
+    def source_chip(source):
+        colors = {
+            "Anthropic Blog": "#c17f2a", "OpenAI Blog": "#1a6b4a",
+            "Google AI Blog": "#1a6b8a", "AWS AI Blog": "#8a3a00",
+            "platformengineering.org": "#1c4d35", "Medium": "#1a1208",
+            "NewsAPI": "#b5860d",
         }
-        source = a.get("source", "")
-        src_key = next((k for k in source_badge_colors if k in source), "NewsAPI")
-        src_color = source_badge_colors.get(src_key, "#6b7280")
-        
-        comp_html = competitor_html(a)
-        
-        return f"""
-        <div style="margin-bottom:20px;padding:18px;background:#fff;border-radius:10px;border:1px solid #e5e7eb;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
-            <span style="display:inline-block;padding:2px 10px;background:{src_color};color:#fff;border-radius:99px;font-size:11px;font-weight:600;">{a.get('source','')}</span>
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span style="font-size:11px;color:{rel_color};font-weight:600;">Relevance: {rel_score}/10</span>
-              {f'<span style="display:inline-block;padding:2px 8px;background:#dbeafe;color:#1d4ed8;border-radius:99px;font-size:10px;font-weight:600;">🔧 {a.get("category","")}</span>' if a.get("is_product_or_tool") else ''}
-            </div>
-          </div>
-          <h3 style="margin:0 0 8px;font-size:16px;font-weight:700;line-height:1.4;">
-            <a href="{a.get('url','#')}" style="color:#1a1a2e;text-decoration:none;">{a.get('title','')}</a>
-          </h3>
-          <p style="margin:0 0 10px;color:#555;font-size:14px;line-height:1.6;">{a.get('summary','No summary available.')}</p>
-          <div>{tag_html}</div>
-          {comp_html}
-        </div>"""
-    
-    # Build section HTML
-    sections_html = ""
-    cat_icons = {
-        "Product/Tool": "🔧", "AI Model": "🤖", "Research Paper": "📄",
-        "Industry News": "📰", "Tutorial/Guide": "📚", "Platform/Infrastructure": "🏗️"
-    }
-    for cat, arts in by_category.items():
-        icon = cat_icons.get(cat, "📌")
-        cards = "\n".join([article_card(a) for a in arts])
-        sections_html += f"""
-        <div style="margin-bottom:32px;">
-          <h2 style="margin:0 0 16px;font-size:14px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;border-bottom:2px solid #f3f4f6;padding-bottom:8px;">
-            {icon} {cat} <span style="color:#d1d5db;font-weight:400;">({len(arts)})</span>
-          </h2>
-          {cards}
-        </div>"""
-    
-    return f"""<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f8f9fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-  <div style="max-width:680px;margin:0 auto;padding:32px 16px;">
-    
-    <!-- Header -->
-    <div style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%);border-radius:14px;padding:32px;margin-bottom:24px;text-align:center;">
-      <div style="font-size:32px;margin-bottom:8px;">🤖</div>
-      <h1 style="margin:0 0 4px;font-size:24px;font-weight:800;color:#fff;letter-spacing:-0.5px;">AI News Tracker</h1>
-      <p style="margin:0;color:#94a3b8;font-size:14px;">Daily Digest · {date_str}</p>
-      <div style="margin-top:16px;padding:12px 20px;background:rgba(255,255,255,0.1);border-radius:8px;display:inline-block;">
-        <span style="color:#e2e8f0;font-size:13px;">Hi {user_name} 👋 &nbsp;·&nbsp; </span>
-        <span style="color:#60a5fa;font-size:13px;font-weight:600;">{len(articles)} top articles curated for you</span>
-      </div>
-    </div>
-    
-    <!-- Focus Banner -->
-    <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px 18px;margin-bottom:24px;display:flex;align-items:center;gap:12px;">
-      <span style="font-size:20px;">🎯</span>
-      <div>
-        <div style="font-weight:700;font-size:13px;color:#1a1a2e;">Focus: Software Development &amp; Platform Engineering</div>
-        <div style="font-size:12px;color:#9ca3af;margin-top:2px;">Filtered for DevEx, MLOps, AI tooling, infrastructure &amp; developer platforms</div>
-      </div>
-    </div>
-    
-    <!-- Articles -->
-    {sections_html}
-    
-    <!-- Footer -->
-    <div style="text-align:center;padding:24px 0;border-top:1px solid #e5e7eb;margin-top:16px;">
-      <p style="margin:0 0 8px;color:#9ca3af;font-size:12px;">You're receiving this because you subscribed to AI News Tracker.</p>
-      <a href="{app_url}" style="color:#3b82f6;font-size:12px;text-decoration:none;">View Dashboard</a>
-      &nbsp;·&nbsp;
-      <a href="{api_url}/api/users/unsubscribe?token={unsubscribe_token}" style="color:#9ca3af;font-size:12px;text-decoration:none;">Unsubscribe</a>
-    </div>
-  </div>
-</body>
-</html>"""
+        bg = colors.get(source, "#6b7280")
+        return (f'<span style="display:inline-block;padding:2px 10px;background:{bg};'
+                f'color:#fff;border-radius:4px;font-size:11px;font-weight:600;">{source}</span>')
+
+    def story_card(a, index):
+        is_lead  = index == 0 or a.get("is_lead", False)
+        title    = a.get("title", "")
+        url      = a.get("url", "#")
+        summary  = a.get("summary", "")
+        score    = a.get("relevance_score", 5)
+        source   = a.get("source", "")
+        impl     = a.get("implication", "")
+        also     = a.get("also_covered_by", [])
+        comp_adv = a.get("competitive_advantage", "")
+        competitors = a.get("competitors", [])
+
+        border  = "2px solid #1a1a2e" if is_lead else "1px solid #e5e7eb"
+        padding = "22px" if is_lead else "16px"
+        fsize   = "17px" if is_lead else "15px"
+
+        comp_rows = "".join([
+            f'<tr><td style="padding:5px 8px;font-weight:600;font-size:12px;">{c.get("name","")}</td>'
+            f'<td style="padding:5px 8px;font-size:12px;color:#555;">{c.get("comparison","")}</td></tr>'
+            for c in competitors[:3]
+        ])
+        comp_html = ""
+        if competitors and a.get("is_product_or_tool"):
+            edge = (f'<div style="padding:8px;background:#f0fdf4;font-size:12px;color:#166534;">'
+                    f'<strong>Edge:</strong> {comp_adv}</div>') if comp_adv else ""
+            comp_html = (
+                f'<div style="margin-top:10px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;">'
+                f'<div style="background:#f8f9fa;padding:6px 10px;font-size:10px;font-weight:700;'
+                f'color:#6b7280;text-transform:uppercase;">vs Competitors</div>'
+                f'<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">'
+                f'<thead><tr>'
+                f'<th style="padding:5px 8px;font-size:10px;color:#9ca3af;text-align:left;">Name</th>'
+                f'<th style="padding:5px 8px;font-size:10px;color:#9ca3af;text-align:left;">How this differs</th>'
+                f'</tr></thead><tbody>{comp_rows}</tbody></table>{edge}</div>'
+            )
+
+        also_html = ""
+        if also:
+            links = " · ".join([f'<a href="{x["url"]}" style="color:#6b7280;font-size:11px;">{x["source"]}</a>' for x in also])
+            also_html = f'<div style="margin-top:8px;font-size:11px;color:#9ca3af;">Also covered: {links}</div>'
+
+        impl_html = ""
+        if impl and impl != "N/A":
+            impl_html = (f'<div style="margin-top:10px;padding:10px 14px;background:#eff6ff;'
+                         f'border-left:3px solid #3b82f6;border-radius:0 6px 6px 0;'
+                         f'font-size:12px;color:#1e40af;line-height:1.5;">&#x1F4A1; {impl}</div>')
+
+        lead_label = ('<div style="margin-bottom:10px;"><span style="background:#1a1a2e;color:#fff;'
+                      'font-size:10px;font-weight:700;padding:3px 10px;border-radius:4px;">'
+                      'TOP STORY</span></div>') if is_lead else ""
+
+        return (
+            f'<div style="margin-bottom:14px;padding:{padding};background:#fff;'
+            f'border:{border};border-radius:8px;">'
+            f'{lead_label}'
+            f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">'
+            f'{source_chip(source)} {score_dot(score)}'
+            f'<span style="font-size:11px;color:#9ca3af;">{a.get("category","")}</span></div>'
+            f'<h3 style="margin:0 0 8px;font-size:{fsize};font-weight:700;line-height:1.35;color:#1a1a2e;">'
+            f'<a href="{url}" style="color:inherit;text-decoration:none;">{title}</a></h3>'
+            f'<p style="margin:0;color:#555;font-size:13px;line-height:1.6;">{summary}</p>'
+            f'{impl_html}{comp_html}{also_html}</div>'
+        )
+
+    stories_html = "".join([story_card(a, i) for i, a in enumerate(stories)])
+
+    sleeper_html = ""
+    if sleeper:
+        sleeper_html = (
+            '<div style="margin-top:28px;">'
+            '<div style="font-size:12px;font-weight:700;color:#6b7280;text-transform:uppercase;'
+            'letter-spacing:0.08em;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid #f3f4f6;">'
+            '&#x1F50D; Under the Radar</div>'
+            + story_card(sleeper, 99) +
+            '<p style="margin:4px 0 0;font-size:11px;color:#9ca3af;">'
+            'Lower scored but caught our eye &#8212; worth a read if you have time.</p></div>'
+        )
+
+    trends_html = ""
+    if trends:
+        chips = "".join([
+            f'<span style="display:inline-block;margin:3px 4px 3px 0;padding:4px 12px;'
+            f'background:#f3f4f6;border-radius:99px;font-size:12px;color:#374151;">'
+            f'&#x1F4C8; {t}</span>'
+            for t in trends
+        ])
+        trends_html = (
+            '<div style="margin-top:28px;padding:16px 18px;background:#fafafa;'
+            'border:1px solid #e5e7eb;border-radius:8px;">'
+            '<div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;'
+            'letter-spacing:0.08em;margin-bottom:10px;">Recurring Themes (last 14 days)</div>'
+            + chips + '</div>'
+        )
+
+    return (
+        '<!DOCTYPE html><html><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1"></head>'
+        '<body style="margin:0;padding:0;background:#f8f9fa;'
+        'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif;">'
+        '<div style="max-width:660px;margin:0 auto;padding:28px 16px;">'
+        '<div style="background:linear-gradient(135deg,#1a1a2e 0%,#0f3460 100%);'
+        'border-radius:12px;padding:28px 32px;margin-bottom:20px;">'
+        '<div style="display:flex;justify-content:space-between;align-items:center;">'
+        '<div><div style="font-size:20px;font-weight:800;color:#fff;">AI Signal</div>'
+        f'<div style="color:#94a3b8;font-size:13px;margin-top:2px;">'
+        f'{date_str} &nbsp;&#183;&nbsp; {total} stories for {user_name}</div></div>'
+        f'<a href="{app_url}" style="color:#60a5fa;font-size:12px;text-decoration:none;">View feed &rarr;</a>'
+        '</div></div>'
+        + stories_html + sleeper_html + trends_html +
+        f'<div style="text-align:center;padding:20px 0;margin-top:20px;border-top:1px solid #e5e7eb;">'
+        f'<a href="{app_url}" style="color:#6b7280;font-size:12px;text-decoration:none;margin:0 8px;">Dashboard</a>'
+        f' &nbsp;&#183;&nbsp; '
+        f'<a href="{api_url}/api/users/unsubscribe?token={unsubscribe_token}" '
+        f'style="color:#9ca3af;font-size:12px;text-decoration:none;margin:0 8px;">Unsubscribe</a>'
+        f'</div></div></body></html>'
+    )
+
+
+async def send_daily_digest(user, digest: dict) -> bool:
+    """Send curated editorial digest to a user."""
+    if not digest.get("stories"):
+        logger.info(f"Empty digest for {user.email} — skipping")
+        return False
+    date_str    = datetime.now().strftime("%b %d, %Y")
+    total       = digest.get("article_count", 0)
+    subject     = f"AI Signal \u00b7 {date_str} \u00b7 {total} stories worth reading"
+    unsub_token = getattr(user, "unsubscribe_token", "") or ""
+    html        = build_html_email(user.name or "there", digest, unsubscribe_token=unsub_token)
+    return await send_email(user.email, subject, html)
+
 
 
 async def send_email(to_email: str, subject: str, html_body: str) -> bool:
