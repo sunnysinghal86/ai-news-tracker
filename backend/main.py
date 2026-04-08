@@ -17,6 +17,7 @@ from news_fetcher import fetch_all_news
 from summarizer import summarize_articles, enrich_all
 from news_fetcher import quality_score
 from emailer import send_daily_digest
+from digest_curator import curate_digest
 from routers import news, users, config
 
 logging.basicConfig(level=logging.INFO)
