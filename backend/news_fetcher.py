@@ -35,7 +35,11 @@ AI_KEYWORDS = [
     "diffusion model", "text-to-image", "text-to-video", "AI startup",
     "series a", "series b", "raises", "launches", "announces", "unveils",
     "bedrock", "sagemaker", "vertex ai", "azure ai", "AI safety",
-    "context window", "tokens", "open source model", "weights"
+    "context window", "tokens", "open source model", "weights",
+    # Platform engineering terms — relevant even without AI keywords
+    "kubernetes", "k8s", "devops", "gitops", "observability",
+    "developer portal", "internal platform", "idp", "backstage",
+    "platform team", "cloud native", "service mesh", "helm",
 ]
 
 # ── High-value keywords that signal important AI/platform engineering content ──
@@ -451,7 +455,25 @@ async def fetch_ai_news_rss(session: aiohttp.ClientSession) -> List[RawArticle]:
     Uses is_relevant() keyword filter on all sources except company blogs
     (Anthropic/OpenAI/Google AI Blog are always AI-relevant).
     """
-    ALWAYS_RELEVANT = {"Anthropic Blog", "OpenAI Blog", "Google AI Blog"}
+    ALWAYS_RELEVANT = {
+        "Anthropic Blog", "OpenAI Blog", "Google AI Blog",
+        # Platform eng sources — trusted, bypass keyword filter
+        "Stack Overflow Blog", "InfoQ", "The New Stack",
+    }
+
+    # Per-source caps — prevents high-volume sources flooding the pool
+    # Company blogs publish infrequently, platform sources publish daily
+    SOURCE_CAPS = {
+        "Anthropic Blog":      20,
+        "OpenAI Blog":         20,
+        "Google AI Blog":      20,
+        "AWS AI Blog":         15,
+        "Stack Overflow Blog": 10,
+        "InfoQ":               10,
+        "The New Stack":       10,   # posts 10-15/day — must cap
+    }
+    DEFAULT_CAP = 15
+
     articles = []
 
     for feed_url, source_name in AI_NEWS_RSS_FEEDS:
@@ -512,7 +534,12 @@ async def fetch_ai_news_rss(session: aiohttp.ClientSession) -> List[RawArticle]:
                 ))
                 count += 1
 
-            logger.info(f"{source_name}: {count} articles")
+                # Stop once per-source cap reached
+                cap = SOURCE_CAPS.get(source_name, DEFAULT_CAP)
+                if count >= cap:
+                    break
+
+            logger.info(f"{source_name}: {count} articles (cap={SOURCE_CAPS.get(source_name, DEFAULT_CAP)})")
 
         except Exception as e:
             logger.warning(f"{source_name} fetch error: {e}")

@@ -133,12 +133,13 @@ async def refresh_news_job():
         # If we filter first, only Medium (always fresh) survives and dominates.
         raw_articles.sort(key=quality_score, reverse=True)
 
-        # Pick top 20 with max 5 per source — prevents any single source from flooding all 20 slots
+        # Pick top 20 with max 3 per source — ensures diversity across 10 sources
+        # 10 sources × 3 = 30 possible slots for 20 needed — good spread
         top_articles, source_dist = [], {}
         for a in raw_articles:
             if len(top_articles) >= 20:
                 break
-            if source_dist.get(a.source, 0) < 5:
+            if source_dist.get(a.source, 0) < 3:
                 top_articles.append(a)
                 source_dist[a.source] = source_dist.get(a.source, 0) + 1
         logger.info(f"Top 20 by quality score: {source_dist}")

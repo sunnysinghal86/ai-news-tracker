@@ -290,9 +290,9 @@ class Database:
 
     async def get_articles(self, limit=50, offset=0, category=None,
                            source=None, min_relevance=0, search=None,
-                           days=30):
+                           days=7):
         """
-        Return articles from the last `days` days (default 30).
+        Return articles from the last `days` days (default 7 — UI shows fresh content).
         Older articles are kept in DB for digest fallback but hidden from the UI feed.
         Set days=0 to return all articles regardless of age.
         """
@@ -371,11 +371,19 @@ class Database:
         for window in [hours, 48, 168]:
             params = [min_relevance, window] + list(self.ACTIVE_SOURCES) + cat_params
             rows = await self._query(f"""
-                SELECT * FROM articles
-                WHERE relevance_score >= ?
-                AND summary IS NOT NULL AND LENGTH(summary) > 40
-                AND fetched_at >= datetime('now', '-' || ? || ' hours')
-                {src_clause} {cat_clause}
+                SELECT * FROM (
+                    SELECT *,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY source
+                            ORDER BY relevance_score DESC, fetched_at DESC
+                        ) as rn
+                    FROM articles
+                    WHERE relevance_score >= ?
+                    AND summary IS NOT NULL AND LENGTH(summary) > 40
+                    AND fetched_at >= datetime('now', '-' || ? || ' hours')
+                    {src_clause} {cat_clause}
+                ) ranked
+                WHERE rn <= 5
                 ORDER BY relevance_score DESC, fetched_at DESC
                 LIMIT {limit}
             """, params)
@@ -388,10 +396,18 @@ class Database:
         logger.info(f"Digest: falling back to score>=5, no time limit")
         params = [5] + list(self.ACTIVE_SOURCES) + cat_params + [limit]
         rows = await self._query(f"""
-            SELECT * FROM articles
-            WHERE relevance_score >= 5
-            AND summary IS NOT NULL AND LENGTH(summary) > 40
-            {src_clause} {cat_clause}
+            SELECT * FROM (
+                SELECT *,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY source
+                        ORDER BY relevance_score DESC, fetched_at DESC
+                    ) as rn
+                FROM articles
+                WHERE relevance_score >= 5
+                AND summary IS NOT NULL AND LENGTH(summary) > 40
+                {src_clause} {cat_clause}
+            ) ranked
+            WHERE rn <= 5
             ORDER BY relevance_score DESC, fetched_at DESC
             LIMIT ?
         """, params)

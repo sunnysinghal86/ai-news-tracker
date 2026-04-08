@@ -207,7 +207,9 @@ def find_sleeper(all_articles: List[dict], selected_ids: set) -> Optional[dict]:
     Criteria: relevance 5-7 (not already top-scored), from a less-common source,
     has a non-empty summary, not noise.
     """
-    mainstream = {"Medium", "OpenAI Blog", "NewsAPI"}
+    # Mainstream = sources everyone already reads
+    # New platform sources make ideal sleeper picks
+    mainstream = {"Medium", "OpenAI Blog", "NewsAPI", "Anthropic Blog", "Google AI Blog"}
     candidates = [
         a for a in all_articles
         if a["id"] not in selected_ids
