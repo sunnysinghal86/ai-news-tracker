@@ -153,7 +153,9 @@ function ArticleCard({ article, expanded, onToggle, isLead }) {
   const src  = srcFor(article.source);
   const icon = CAT_ICON[article.category] || "◆";
   const hasSummary = article.summary && article.summary.length > 20;
-  const hasRivals  = article.is_product_or_tool || article.competitors?.length > 0;
+  // Only show rivals section if we actually have competitor data
+  // is_product_or_tool=true with empty competitors shows a broken placeholder — skip it
+  const hasRivals = article.competitors?.length > 0;
 
   return (
     <article
@@ -272,9 +274,7 @@ function ArticleCard({ article, expanded, onToggle, isLead }) {
                       </div>
                       <div style={{ fontStyle: "italic" }}>{article.competitive_advantage}</div>
                     </>
-                  : <span style={{ fontStyle: "italic" }}>
-                      No competitor data yet — will be populated on next refresh.
-                    </span>
+                  : null
                 }
               </div>
           }
