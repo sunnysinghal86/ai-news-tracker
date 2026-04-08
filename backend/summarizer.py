@@ -141,7 +141,7 @@ async def _call_claude(prompt: str, session: aiohttp.ClientSession, retries: int
         return None
 
     payload = {
-        "model": "claude-haiku-4-5-20251001",
+        "model": os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001"),
         "max_tokens": 550,  # 550 — cutoff was at ~425, need headroom for longer articles
         "system": SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": prompt}],
@@ -184,7 +184,6 @@ async def _analyse_article(article: RawArticle, session: aiohttp.ClientSession) 
     prompt = (
         "Analyse this AI/tech article. Return ONLY valid JSON, no markdown.\n"
         f"Title: {article.title}\nSource: {article.source}\nContent: {content_text}\n\n"
-        f"{'IMPORTANT: This is from arXiv — category MUST be Research Paper.\n' if article.source == 'arXiv' else ''}"
         f"{'IMPORTANT: This is from MIT AI News — category MUST be Research Paper.\n' if article.source == 'MIT AI News' else ''}"
         "Pick category (use EXACT name only):\n"
         "  Product/Tool — SDK, library, framework, CLI, SaaS, developer tool\n"
@@ -193,17 +192,19 @@ async def _analyse_article(article: RawArticle, session: aiohttp.ClientSession) 
         "  Tutorial/Guide — how-to, guide, best practices\n"
         "  Platform/Infrastructure — MLOps, deployment, cloud AI, DevOps\n"
         "  Industry News — funding, acquisition, company news, opinion\n"
-        "is_product_or_tool=true for Product/Tool, AI Model, Platform/Infrastructure; "
-        "if true include 2-3 named competitors + specific competitive_advantage\n"
+        "is_product_or_tool: set true if article is about a specific named product, tool, model, "
+        "framework, SDK, platform, or service — NOT for general news or opinion.\n"
+        "If is_product_or_tool=true, you MUST include 2-3 real named competitors with "
+        "specific comparisons. Do not leave competitors empty.\n"
         "relevance: 9-10=AI infra/MLOps, 7-8=major model/framework, 5-6=AI news, 1-4=weak\n\n"
-        '{"summary":"2-3 eng-focused sentences",'
+        '{"summary":"2-3 sentences focused on what changed and why it matters for engineers",'
         '"category":"<EXACT name from list above, no extra text>",'
         '"tags":["t1","t2","t3"],'
         '"relevance_score":<1-10>,'
         '"is_product_or_tool":<bool>,'
         '"product_name":"<name or empty>",'
-        '"competitors":[{"name":"X","description":"Y","comparison":"Z"}],'
-        '"competitive_advantage":"<differentiator>"}'
+        '"competitors":[{"name":"Competitor Name","description":"what they do","comparison":"how this differs"}],'
+        '"competitive_advantage":"one specific differentiator"}'
     )
 
     base = ProcessedArticle(

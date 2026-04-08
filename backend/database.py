@@ -245,11 +245,24 @@ class Database:
     # ── Articles ──────────────────────────────────────────────────────────────
 
     async def get_summarised_ids(self) -> set:
+        """
+        Returns IDs of articles that don't need re-processing.
+        Excludes articles that should have rivals but don't:
+        - is_product_or_tool=1 with no competitors
+        - category is AI Model/Product/Tool/Platform but competitors empty
+        """
         rows = await self._query(
             """SELECT id FROM articles
                WHERE LENGTH(summary) > 20
-               AND NOT (is_product_or_tool=1
-                        AND (competitors IS NULL OR competitors='[]'))"""
+               AND NOT (
+                   -- Product/tool articles with missing rivals
+                   (is_product_or_tool=1 AND (competitors IS NULL OR competitors='[]'))
+                   OR
+                   -- Category implies rivals but none set
+                   (category IN ('AI Model','Product/Tool','Platform/Infrastructure')
+                    AND (competitors IS NULL OR competitors='[]')
+                    AND is_product_or_tool=0)
+               )"""
         )
         return {r["id"] for r in rows}
 
@@ -579,6 +592,10 @@ class Database:
     def _to_dict(self, row: Row) -> dict:
         d = dict(row)
         d["category"] = _normalise_category(d.get("category", ""), d.get("source", ""))
+        d["is_product_or_tool"] = bool(d.get("is_product_or_tool", 0))
+        # Ensure competitors is always a list
+        if not d.get("competitors"):
+            d["competitors"] = []
         for f in ("tags", "competitors"):
             if d.get(f):
                 try:
