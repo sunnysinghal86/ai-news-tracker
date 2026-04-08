@@ -12,7 +12,7 @@ async def get_news(
     source: Optional[str] = None,
     min_relevance: int = Query(0, ge=0, le=10),
     search: Optional[str] = None,
-    days: int = Query(30, ge=0, le=90),  # default 30 days — enough buffer after restarts
+    days: int = Query(7, ge=0, le=30),   # default 7 days — UI shows fresh content only
 ):
     async with get_db() as db:
         articles = await db.get_articles(
