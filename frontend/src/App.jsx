@@ -73,18 +73,14 @@ function timeAgo(dateStr) {
 }
 
 const SRC_STYLE = {
-  "arXiv":                   { bg: "#1a3a5c", label: "arXiv" },
-  "NewsAPI":                 { bg: "#b5860d", label: "News" },
+    "NewsAPI":                 { bg: "#b5860d", label: "News" },
   "Medium":                  { bg: "#1a1208", label: "Medium" },
   "platformengineering.org": { bg: "#1c4d35", label: "PE.org" },
   "Anthropic Blog":          { bg: "#c17f2a", label: "Anthropic" },
   "OpenAI Blog":             { bg: "#1a6b4a", label: "OpenAI" },
-  "Google DeepMind":         { bg: "#1558a0", label: "DeepMind" },
-  "Google Research":         { bg: "#1558a0", label: "G.Research" },
-  "AWS AI Blog":             { bg: "#8a3a00", label: "AWS" },
+      "AWS AI Blog":             { bg: "#8a3a00", label: "AWS" },
   "Google AI Blog":          { bg: "#1a6b8a", label: "Google AI" },
-  "MIT AI News":             { bg: "#8b0000", label: "MIT" },
-};
+  };
 function srcFor(s) {
   const k = Object.keys(SRC_STYLE).find(k => s?.includes(k)) || "NewsAPI";
   return SRC_STYLE[k];
@@ -522,7 +518,7 @@ export default function App() {
                 style={{ flex: "1", minWidth: 0, padding: "7px 0", border: "none", borderBottom: `2px solid ${T.ink}`, background: "transparent", color: T.ink, fontSize: "13px", outline: "none", fontFamily: "Georgia, serif" }} />
               {[
                 { k: "category", opts: ["Product/Tool","AI Model","Research Paper","Industry News","Tutorial/Guide","Platform/Infrastructure"], ph: "All sections" },
-                { k: "source",   opts: ["arXiv","NewsAPI","Medium","platformengineering.org","Anthropic Blog","OpenAI Blog","Google DeepMind","Google Research","AWS AI Blog","Google AI Blog","MIT AI News"], ph: "All sources" },
+                { k: "source",   opts: ["Medium","platformengineering.org","Anthropic Blog","OpenAI Blog","Google AI Blog","AWS AI Blog","NewsAPI"], ph: "All sources" },
               ].map(({ k, opts, ph }) => (
                 <select key={k} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))}
                   style={{ flex: "1", minWidth: 0, padding: "7px 6px", border: "none", borderBottom: `2px solid ${filters[k] ? T.ink : T.rule}`, background: "transparent", color: filters[k] ? T.ink : T.muted, fontSize: "12px", cursor: "pointer", outline: "none", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.06em" }}>
@@ -556,7 +552,7 @@ export default function App() {
                   {[
                     { label: "Articles Indexed",  val: stats?.total_articles || 0 },
                     { label: "Products & Tools",   val: stats?.product_articles || 0 },
-                    { label: "Sources Active",     val: 11 },
+                    { label: "Sources Active",     val: 7 },
                     { label: "Subscribers",        val: usersData?.users?.length || 0 },
                   ].map(({ label, val }) => (
                     <div key={label} style={{ padding: "18px 0 16px", borderRight: `1px solid ${T.rule}`, textAlign: "center" }}>
