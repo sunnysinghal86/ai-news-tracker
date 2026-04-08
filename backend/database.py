@@ -299,13 +299,11 @@ class Database:
         conditions = ["1=1"]
         params = []
         if days:
-            # Use MAX(published_at, fetched_at) — if either is recent, show the article.
-            # fetched_at is always set correctly (DEFAULT datetime('now')).
-            # This handles articles where published_at is NULL, empty, or malformed.
+            # Filter by published_at — the actual article date.
+            # Simpler and more correct than MAX(published_at, fetched_at).
+            # Articles with null/bad published_at are excluded (correct behaviour).
             conditions.append(
-                "MAX(COALESCE(substr(published_at,1,10),'1970-01-01'), "
-                "    COALESCE(substr(fetched_at,1,10),'1970-01-01')) "
-                ">= date('now', ? || ' days')"
+                "substr(published_at, 1, 10) >= date('now', ? || ' days')"
             )
             params.append(f"-{days}")
         if category:
@@ -347,47 +345,60 @@ class Database:
     ACTIVE_SOURCES = [
         "Medium", "platformengineering.org", "Anthropic Blog",
         "OpenAI Blog", "Google AI Blog", "AWS AI Blog", "NewsAPI",
+        "Stack Overflow Blog", "InfoQ", "The New Stack",
     ]
 
     async def get_top_articles(self, limit=30, min_relevance=5,
                                categories=None, hours=24):
         """
-        Fetch top articles for digest with progressive fallback:
-        1. Try last 24h / 48h / 7d with subscriber's min_relevance
-        2. If still < 10, relax min_relevance by 1 point and retry
-        3. Final fallback: all time, min_relevance floored at 5
-        Always returns from active sources only.
+        Fetch top articles for digest.
+        min_relevance is used as a PREFERENCE not a hard cutoff —
+        articles below threshold are included as fallback to guarantee
+        the digest always has enough content.
+        Always restricted to active sources only.
         """
         src_placeholders = ",".join("?" * len(self.ACTIVE_SOURCES))
         src_clause = f"AND source IN ({src_placeholders})"
 
-        def build_query(window, score_floor):
-            cat_clause = ""
-            params = [score_floor, window] + list(self.ACTIVE_SOURCES)
-            if categories:
-                placeholders = ",".join("?" * len(categories))
-                cat_clause = f"AND category IN ({placeholders})"
-                params += list(categories)
-            query = f"""
+        cat_clause = ""
+        cat_params = []
+        if categories:
+            placeholders = ",".join("?" * len(categories))
+            cat_clause = f"AND category IN ({placeholders})"
+            cat_params = list(categories)
+
+        # Try preferred window with min_relevance
+        for window in [hours, 48, 168]:
+            params = [min_relevance, window] + list(self.ACTIVE_SOURCES) + cat_params
+            rows = await self._query(f"""
                 SELECT * FROM articles
                 WHERE relevance_score >= ?
                 AND summary IS NOT NULL AND LENGTH(summary) > 40
                 AND fetched_at >= datetime('now', '-' || ? || ' hours')
-                {src_clause}
-                {cat_clause}
+                {src_clause} {cat_clause}
                 ORDER BY relevance_score DESC, fetched_at DESC
                 LIMIT {limit}
-            """
-            return query, params
-
-        # Phase 1 — try with subscriber's score, expanding time window
-        for window in [hours, 48, 168]:
-            query, params = build_query(window, min_relevance)
-            rows     = await self._query(query, params)
+            """, params)
             articles = [self._to_dict(r) for r in rows]
             if len(articles) >= 10:
                 logger.info(f"Digest: {len(articles)} articles (last {window}h, min={min_relevance})")
                 return articles
+
+        # Fallback — drop min_relevance entirely, return best available by score
+        logger.info(f"Digest: falling back to score>=5, no time limit")
+        params = [5] + list(self.ACTIVE_SOURCES) + cat_params + [limit]
+        rows = await self._query(f"""
+            SELECT * FROM articles
+            WHERE relevance_score >= 5
+            AND summary IS NOT NULL AND LENGTH(summary) > 40
+            {src_clause} {cat_clause}
+            ORDER BY relevance_score DESC, fetched_at DESC
+            LIMIT ?
+        """, params)
+        articles = [self._to_dict(r) for r in rows]
+        logger.info(f"Digest fallback: {len(articles)} articles")
+        return articles
+
 
         # Phase 2 — relax min_relevance by 1 point, try 7 days
         relaxed = max(5, min_relevance - 1)

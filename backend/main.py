@@ -115,6 +115,15 @@ app.include_router(config.router, prefix="/api/config", tags=["config"])
 async def refresh_news_job():
     logger.info("News refresh starting...")
     try:
+        # Step 0 — purge articles older than 30 days from DB
+        # This keeps the DB clean and ensures old articles never show on UI
+        async with get_db() as db:
+            await db._exec(
+                "DELETE FROM articles WHERE substr(published_at,1,10) < date('now','-30 days')"
+            )
+            rows = await db._query("SELECT COUNT(*) as n FROM articles")
+            logger.info(f"DB after purge: {rows[0]['n']} articles")
+
         # Step 1 — fetch from all sources
         raw_articles = await fetch_all_news()
         logger.info(f"Fetched {len(raw_articles)} raw articles")

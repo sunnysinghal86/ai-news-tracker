@@ -1,6 +1,6 @@
 """
-News Fetcher - Pulls from Hacker News, arXiv, NewsAPI, Medium RSS
-Focus: AI/ML, Software Development, Platform Engineering
+News Fetcher - Pulls from 7 curated sources
+Sources: Medium, PE.org, Anthropic Blog, OpenAI Blog, Google AI Blog, AWS AI Blog, NewsAPI
 """
 
 import aiohttp
@@ -60,17 +60,16 @@ HIGH_SIGNAL_KEYWORDS = [
 # Research sources get a small boost because their titles are academic
 # (no marketing keywords) but content is high quality.
 SOURCE_BONUS = {
-    "arXiv":                    3,   # academic titles lack keywords — needs a nudge
-    "MIT AI News":              2,
-    "Anthropic Blog":           2,   # official announcements, factual titles
+    "Anthropic Blog":           2,   # official — factual titles, no keyword stuffing
     "OpenAI Blog":              2,
-    "Google DeepMind":          2,
     "Google AI Blog":           2,
-    "Google Research":          2,
     "AWS AI Blog":              1,
     "platformengineering.org":  1,
+    "Stack Overflow Blog":      1,   # community-validated, developer-focused
+    "InfoQ":                    1,   # professional audience, well-edited
+    "The New Stack":            1,   # platform eng + cloud native focus
     "NewsAPI":                  0,
-    "Medium":                   0,   # already benefits from keyword-rich titles
+    "Medium":                   0,   # keyword-rich titles — no bonus needed
 }
 
 def quality_score(article: "RawArticle") -> float:
@@ -82,8 +81,8 @@ def quality_score(article: "RawArticle") -> float:
     Academic/official sources have plain descriptive titles and score poorly.
 
     Solution: small source bonus to counteract title-keyword bias, NOT to
-    prefer sources by brand. arXiv gets +3 because its titles are academic,
-    not because arXiv is "better" than Medium per se.
+    prefer sources by brand. Official blogs get +2 since their titles are
+    factual/descriptive rather than keyword-optimised.
 
     Factors:
     1. HN upvotes — strongest objective quality signal (community-validated)
@@ -209,68 +208,7 @@ async def fetch_hackernews(session: aiohttp.ClientSession) -> List[RawArticle]:
 
 
 # ─────────────────────────────────────────────
-# arXiv
 # ─────────────────────────────────────────────
-async def fetch_arxiv(session: aiohttp.ClientSession) -> List[RawArticle]:
-    """Fetch latest AI papers from arXiv — uses its own session to avoid shared timeout."""
-    articles = []
-    try:
-        url = "https://export.arxiv.org/api/query"
-        params = {
-            "search_query": "cat:cs.AI OR cat:cs.LG OR cat:cs.CL",
-            "sortBy": "submittedDate",
-            "sortOrder": "descending",
-            "max_results": 15,
-            "start": 0,
-        }
-        # arXiv gets its own session — avoids shared 30s timeout being consumed
-        # by concurrent requests to other sources
-        arxiv_timeout = aiohttp.ClientTimeout(total=25)
-        async with aiohttp.ClientSession(timeout=arxiv_timeout) as arxiv_session:
-            async with arxiv_session.get(url, params=params) as resp:
-                if resp.status != 200:
-                    logger.warning(f"arXiv returned HTTP {resp.status}")
-                    return []
-                text = await resp.text()
-        
-        feed = feedparser.parse(text)
-        for entry in feed.entries:
-            title = entry.get("title", "").replace("\n", " ")
-            abstract = entry.get("summary", "").replace("\n", " ")
-            
-            published_str = entry.get("published", "")
-            try:
-                published = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
-            except:
-                published = datetime.now(timezone.utc)
-            
-            articles.append(RawArticle(
-                id=gen_id(entry.get("id", "")),
-                title=title,
-                url=entry.get("id", ""),
-                source="arXiv",
-                published_at=published,
-                content=abstract,
-                author=", ".join([a.get("name", "") for a in entry.get("authors", [])[:3]]),
-                tags=["research", "arxiv"],
-                score=0
-            ))
-        logger.info(f"arXiv: {len(articles)} papers")
-    except Exception as e:
-        logger.error(f"arXiv fetch error: {e}")
-    return articles
-
-
-# ─────────────────────────────────────────────
-# NewsAPI
-# ─────────────────────────────────────────────
-# Reputable tech/AI news domains for NewsAPI — prevents PyPI/Yahoo/spam results
-NEWSAPI_DOMAINS = (
-    "techcrunch.com,wired.com,theverge.com,arstechnica.com,"
-    "venturebeat.com,thenextweb.com,zdnet.com,infoworld.com,"
-    "technologyreview.com,spectrum.ieee.org"
-)
-
 async def fetch_newsapi(session: aiohttp.ClientSession) -> List[RawArticle]:
     """Fetch AI/tech news from reputable sources via NewsAPI."""
     if not NEWS_API_KEY:
@@ -380,15 +318,14 @@ PLATFORM_RSS_FEEDS = [
 # ── New AI news RSS sources ───────────────────────────────────────────────────
 AI_NEWS_RSS_FEEDS = [
     # Company blogs — catch every model/product release on day one
-    ("https://www.anthropic.com/rss.xml", "Anthropic Blog"),
+    ("https://www.anthropic.com/rss.xml",                   "Anthropic Blog"),
     ("https://openai.com/news/rss.xml",                     "OpenAI Blog"),
-    ("https://deepmind.google/blog/rss.xml",                "Google DeepMind"),
-    ("https://research.google/blog/rss",                    "Google Research"),
     ("https://aws.amazon.com/blogs/machine-learning/feed/", "AWS AI Blog"),
     ("https://blog.google/technology/ai/rss/",              "Google AI Blog"),
-    ("https://news.mit.edu/rss/topic/artificial-intelligence2", "MIT AI News"),
-    # Industry coverage — product launches, funding, analysis
-    # Research explainers for engineers
+    # Platform engineering & developer sources
+    ("https://stackoverflow.blog/feed/",                    "Stack Overflow Blog"),
+    ("https://www.infoq.com/feed/",                         "InfoQ"),
+    ("https://thenewstack.io/feed/",                        "The New Stack"),
 ]
 
 
@@ -508,13 +445,13 @@ async def fetch_anthropic(session: aiohttp.ClientSession) -> List[RawArticle]:
 async def fetch_ai_news_rss(session: aiohttp.ClientSession) -> List[RawArticle]:
     """
     Fetch from company blogs and AI industry news RSS feeds.
-    Covers: Anthropic, OpenAI, Google DeepMind, Google Research,
+    Covers: Anthropic, OpenAI, Google AI Blog, AWS AI Blog
             AWS AI Blog, VentureBeat AI, TechCrunch AI, The Gradient.
 
     Uses is_relevant() keyword filter on all sources except company blogs
-    (Anthropic/OpenAI/DeepMind/Google Research are always AI-relevant).
+    (Anthropic/OpenAI/Google AI Blog are always AI-relevant).
     """
-    ALWAYS_RELEVANT = {"Anthropic Blog", "OpenAI Blog", "Google DeepMind", "Google Research", "Google AI Blog"}
+    ALWAYS_RELEVANT = {"Anthropic Blog", "OpenAI Blog", "Google AI Blog"}
     articles = []
 
     for feed_url, source_name in AI_NEWS_RSS_FEEDS:
@@ -588,15 +525,14 @@ async def fetch_ai_news_rss(session: aiohttp.ClientSession) -> List[RawArticle]:
 # ─────────────────────────────────────────────
 async def fetch_all_news() -> List[RawArticle]:
     """Fetch from all active sources concurrently.
-    Active: arXiv, NewsAPI, PE.org, company blogs (OpenAI/DeepMind/Google/AWS/Anthropic), MIT AI News
-    Removed: HN (rate limited), Medium (low quality), TechCrunch/Ars/Wired/Verge (removed by user)
+    Active: Medium, PE.org, Anthropic Blog, OpenAI Blog, Google AI Blog, AWS AI Blog,
+    NewsAPI, Stack Overflow Blog, InfoQ, The New Stack
     """
     timeout = aiohttp.ClientTimeout(total=30)
     connector = aiohttp.TCPConnector(limit=20)
     
     async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
         results = await asyncio.gather(
-            fetch_arxiv(session),
             fetch_newsapi(session),
             fetch_medium(session),
             fetch_platform_sources(session),
