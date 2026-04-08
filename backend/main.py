@@ -24,14 +24,33 @@ logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
 
 
+async def keep_alive_ping():
+    """Ping own /health endpoint every 10 min to prevent Render free tier spin-down."""
+    api_url = os.getenv("API_URL", "")
+    if not api_url:
+        return
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{api_url}/health", timeout=aiohttp.ClientTimeout(total=5)) as r:
+                logger.debug(f"Keep-alive ping: {r.status}")
+    except Exception as e:
+        logger.debug(f"Keep-alive ping failed: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
 
-    scheduler.add_job(refresh_news_job, "interval", hours=12,  # every 12h — ~$1.70/month
-                      id="refresh_news", replace_existing=True)
+    scheduler.add_job(refresh_news_job, "interval", hours=12,
+                      id="refresh_news", replace_existing=True,
+                      misfire_grace_time=300)   # run even if missed by up to 5 min
     scheduler.add_job(send_digest_job, "cron", hour=8, minute=0,
-                      id="daily_digest", replace_existing=True)
+                      timezone="UTC", id="daily_digest", replace_existing=True,
+                      misfire_grace_time=300)   # critical — server restart at 8AM would skip digest
+    # Keep-alive ping — prevents Render free tier from spinning down
+    # Pings /health every 10 minutes so the server stays warm for the 8 AM digest
+    scheduler.add_job(keep_alive_ping, "interval", minutes=10,
+                      id="keep_alive", replace_existing=True)
     scheduler.start()
     logger.info("Scheduler started")
 
@@ -66,6 +85,17 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# ── Admin auth ────────────────────────────────────────────────────────────────
+async def require_admin(x_admin_key: str = Header(default="")):
+    """Validates X-Admin-Key header against ADMIN_API_KEY env var."""
+    expected = os.getenv("ADMIN_API_KEY", "")
+    if not expected:
+        logger.warning("ADMIN_API_KEY not set — admin endpoints are unprotected!")
+        return
+    if x_admin_key != expected:
+        raise HTTPException(status_code=401, detail="Invalid or missing admin key")
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -134,38 +164,44 @@ async def send_digest_job():
             active_users = await db.get_active_users()
 
         async def send_one(user):
-            # Step 1 — fetch candidate articles for this subscriber
-            async with get_db() as db:
-                # Fetch more candidates than needed — curator will filter/cluster
-                candidates = await db.get_top_articles(
-                    limit=20,
-                    min_relevance=user.min_relevance or 5,
-                    categories=user.categories or None,
-                    hours=24,
+            try:
+                # Step 1 — fetch candidate articles for this subscriber
+                async with get_db() as db:
+                    candidates = await db.get_top_articles(
+                        limit=20,
+                        min_relevance=user.min_relevance or 5,
+                        categories=user.categories or None,
+                        hours=24,
+                    )
+
+                if not candidates:
+                    # Widen to 7 days if nothing in last 24h
+                    async with get_db() as db:
+                        candidates = await db.get_top_articles(limit=20, min_relevance=5, hours=168)
+
+                if not candidates:
+                    logger.info(f"No articles for {user.email} — skipping")
+                    return
+
+                # Step 2 — run editorial curator
+                timeout = aiohttp.ClientTimeout(total=60)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with get_db() as db:
+                        digest = await curate_digest(candidates, db, session)
+
+                logger.info(
+                    f"Digest for {user.email}: {digest['article_count']} articles "
+                    f"({len(digest['stories'])} stories, sleeper={digest['sleeper'] is not None})"
                 )
 
-            if not candidates:
-                logger.info(f"No articles for {user.email} — skipping")
-                return
-
-            # Step 2 — run editorial curator
-            timeout = aiohttp.ClientTimeout(total=60)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with get_db() as db:
-                    digest = await curate_digest(candidates, db, session)
-
-            logger.info(
-                f"Digest for {user.email}: {digest['article_count']} articles "
-                f"({len(digest['stories'])} stories + sleeper={digest['sleeper'] is not None}), "
-                f"trends={digest['trends']}"
-            )
-
-            # Step 3 — send
-            success = await send_daily_digest(user, digest)
-            if success:
-                logger.info(f"Digest sent to {user.email}")
-            else:
-                logger.error(f"Digest FAILED for {user.email}")
+                # Step 3 — send
+                success = await send_daily_digest(user, digest)
+                if success:
+                    logger.info(f"Digest sent to {user.email}")
+                else:
+                    logger.error(f"Digest FAILED for {user.email}")
+            except Exception as e:
+                logger.error(f"Digest error for {user.email}: {e}", exc_info=True)
 
         for i, user in enumerate(active_users):
             await send_one(user)
