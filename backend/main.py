@@ -124,8 +124,7 @@ async def refresh_news_job():
         # If we filter first, only Medium (always fresh) survives and dominates.
         raw_articles.sort(key=quality_score, reverse=True)
 
-        # Pick top 20 with max 5 per source — prevents any single source
-        # (e.g. arXiv with high bonus) from flooding all 20 slots
+        # Pick top 20 with max 5 per source — prevents any single source from flooding all 20 slots
         top_articles, source_dist = [], {}
         for a in raw_articles:
             if len(top_articles) >= 20:
@@ -281,14 +280,17 @@ async def clear_articles(_=Depends(require_admin)):
 
 @app.post("/api/clean-sources")
 async def clean_sources(_=Depends(require_admin)):
-    """Remove articles from bad NewsAPI sub-sources (PyPI, Yahoo, etc.)"""
+    """Remove articles from all retired sources from the DB."""
+    removed_sources = [
+        "arXiv", "MIT AI News", "Google DeepMind", "Google Research",
+    ]
     async with get_db() as db:
-        await db._exec(
-            "DELETE FROM articles WHERE source LIKE 'NewsAPI / %'"
-        )
+        await db._exec("DELETE FROM articles WHERE source LIKE 'NewsAPI / %'")
+        for src in removed_sources:
+            await db._exec("DELETE FROM articles WHERE source = ?", (src,))
         rows = await db._query("SELECT COUNT(*) as n FROM articles")
         remaining = rows[0]["n"] if rows else 0
-    return {"message": f"Removed bad NewsAPI sources. {remaining} articles remain."}
+    return {"message": f"Cleaned retired sources. {remaining} articles remain."}
 
 
 @app.get("/api/summary")
