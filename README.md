@@ -4,7 +4,7 @@
 
 ### The Intelligence Briefing for AI Engineers
 
-*Tracks AI/ML news across 11 curated sources — arXiv · NewsAPI · Medium · PE.org · Anthropic · OpenAI · DeepMind · Google Research · AWS · Google AI Blog · MIT AI News*  
+*Tracks AI/ML news across 7 curated sources — Medium · PE.org · Anthropic · OpenAI · Google AI Blog · AWS AI Blog · NewsAPI*  
 *Claude-powered summaries · Competitor analysis · Daily email digest*
 
 ---
@@ -19,7 +19,7 @@
 
 > **Every morning you open seven tabs, skim thirty headlines, and still feel like you missed something.**
 
-AI Signal fixes that. One beautifully designed briefing lands in your inbox at 8 AM — curated from 11 high-signal sources engineers actually read, summarised by Claude, scored for relevance to *your* stack, and enriched with competitive intelligence on every new tool or model that matters.
+AI Signal fixes that. One beautifully designed briefing lands in your inbox at 8 AM — curated from 7 high-signal sources engineers actually read, summarised by Claude, scored for relevance to *your* stack, and enriched with competitive intelligence on every new tool or model that matters.
 
 It's not a newsletter you subscribed to and forgot. It's infrastructure you own.
 
@@ -33,7 +33,7 @@ It's not a newsletter you subscribed to and forgot. It's infrastructure you own.
 |---|---|
 | **Platform / DevX Engineer** | Knows instantly which new AI tool threatens or enhances their current stack |
 | **Engineering Manager** | Morning brief before standup — no research required |
-| **ML Ops / AI Infra** | arXiv papers + production tool releases in one feed, relevance-ranked |
+| **ML Ops / AI Infra** | Company blog releases + production tool releases in one feed, relevance-ranked |
 | **Tech Lead** | Competitor analysis for every product launch: are we behind? |
 | **Independent Dev / Hacker** | Runs on ~$1/month with zero managed infrastructure |
 
@@ -43,7 +43,7 @@ It's not a newsletter you subscribed to and forgot. It's infrastructure you own.
 
 | Feature | Details |
 |---|---|
-| **11 Sources** | arXiv, NewsAPI, Medium, platformengineering.org, Anthropic Blog, OpenAI Blog, Google DeepMind, Google Research, AWS AI Blog, Google AI Blog, MIT AI News |
+| **7 Sources** | Medium, platformengineering.org, Anthropic Blog, OpenAI Blog, Google AI Blog, AWS AI Blog, NewsAPI |
 | **Claude Haiku Summaries** | 2–3 sentence digest per article — powered by full article body extraction via trafilatura |
 | **Competitor Analysis** | For every product/tool/model: lists rivals + *how this one differs* |
 | **Relevance Scoring** | 1–10 score weighted toward Software Dev & Platform Engineering |
@@ -99,15 +99,15 @@ It's not a newsletter you subscribed to and forgot. It's infrastructure you own.
        │                  EXTERNAL APIs (all HTTPS, outbound only)                       │
        │                                                │                                │
        │  ┌──────────────┐ ┌──────────────┐ ┌──────────────────┐ ┌──────────────────┐  │
-       │  │ Hacker News  │ │  arXiv.org   │ │  NewsAPI.org     │ │  Medium RSS      │  │
-       │  │ Algolia API  │ │  Atom Feed   │ │  REST API        │ │  via rss2json    │  │
-       │  │ (free)       │ │  (free)      │ │  (free tier)     │ │  (free proxy)    │  │
+       │  │ NewsAPI      │ │  Medium RSS  │ │  platformeng      │ │  Company Blogs   │  │
+       │  │ (reputable   │ │  (via rss2   │ │  .org RSS         │ │  Anthropic/OpenAI│  │
+       │  │  domains)    │ │   json)      │ │  (free)           │ │  Google AI/AWS   │  │
        │  └──────────────┘ └──────────────┘ └──────────────────┘ └──────────────────┘  │
        │                                                │                                │
        │  ┌──────────────┐ ┌──────────────┐ ┌──────────┴───────────────────────────┐   │
-       │  │ platform     │ │ Platform     │ │          Claude API                  │   │
-       │  │ engineering  │ │ Weekly RSS   │ │     (Anthropic — claude-haiku)       │   │
-       │  │ .org RSS     │ │ (free)       │ │  Summarise + Categorise + Rivals     │   │
+       │  │ platform     │ │              │ │          Claude API                  │   │
+       │  │ engineering  │ │              │ │     (Anthropic — claude-haiku)       │   │
+       │  │ .org RSS     │ │              │ │  Summarise + Categorise + Rivals     │   │
        │  │ (free)       │ └──────────────┘ └──────────────────────────────────────┘   │
        │  └──────────────┘                                                              │
        └────────────────────────────────────────────────────────────────────────────────┘
@@ -456,7 +456,7 @@ These tests directly encode critical product behaviours:
 │                                                                     │
 │  news_fetcher.py          summarizer.py          database.py        │
 │  ─────────────────        ─────────────          ───────────        │
-│  Fetch 11 sources   →     quality_score()   →    get_summarised     │
+│  Fetch 7 sources   →     quality_score()   →    get_summarised     │
 │  concurrently             rank articles          _ids()             │
 │  (asyncio.gather)                                                   │
 │                           cap at 20              skip already-      │
@@ -476,10 +476,10 @@ These tests directly encode critical product behaviours:
 │                                                                     │
 │  database.py              emailer.py             Resend API         │
 │  ─────────────            ──────────             ──────────         │
-│  get_top_articles()  →    build HTML email  →    deliver to inbox   │
-│  per subscriber           with rivals table                         │
-│  (min_relevance +         + competitive                             │
-│   category filter)         advantage                                │
+│  get_top_articles()  →    curate_digest()  →    build HTML email    │
+│  per subscriber           cluster stories       deliver to inbox    │
+│  (min_relevance +         add implications      via Resend API      │
+│   category filter)        detect trends                             │
 │                                                                     │
 │  fallback cascade:        sent sequentially      1s gap between     │
 │  24h → 48h → 7d →         (not concurrent)       users avoids       │
@@ -532,9 +532,8 @@ Backend          Python 3.12 · FastAPI · APScheduler · libsql · aiohttp · t
 AI               Anthropic Claude Haiku (claude-haiku-4-5-20251001)
 Email            Resend API (free tier: 3,000/month)
 Database         Turso (libSQL cloud SQLite) — persistent, survives restarts, free tier
-News Sources     arXiv · NewsAPI · Medium · platformengineering.org
-                 Anthropic Blog · OpenAI Blog · Google DeepMind · Google Research
-                 AWS AI Blog · Google AI Blog · MIT AI News
+News Sources     Medium · platformengineering.org · Anthropic Blog · OpenAI Blog
+                 Google AI Blog · AWS AI Blog · NewsAPI
 Article Extract  trafilatura (full body) → og:description fallback → raw RSS snippet
 Frontend         React 18 · Vite · Custom editorial CSS (no component library)
 Typography       Playfair Display · Source Serif 4 · Barlow Condensed
