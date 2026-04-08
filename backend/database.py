@@ -245,24 +245,13 @@ class Database:
     # ── Articles ──────────────────────────────────────────────────────────────
 
     async def get_summarised_ids(self) -> set:
-        """
-        Returns IDs of articles that don't need re-processing.
-        Excludes articles that should have rivals but don't:
-        - is_product_or_tool=1 with no competitors
-        - category is AI Model/Product/Tool/Platform but competitors empty
-        """
+        """Returns IDs already processed — articles with a summary and
+        product articles that have competitor data."""
         rows = await self._query(
             """SELECT id FROM articles
                WHERE LENGTH(summary) > 20
-               AND NOT (
-                   -- Product/tool articles with missing rivals
-                   (is_product_or_tool=1 AND (competitors IS NULL OR competitors='[]'))
-                   OR
-                   -- Category implies rivals but none set
-                   (category IN ('AI Model','Product/Tool','Platform/Infrastructure')
-                    AND (competitors IS NULL OR competitors='[]')
-                    AND is_product_or_tool=0)
-               )"""
+               AND NOT (is_product_or_tool=1
+                        AND (competitors IS NULL OR competitors='[]'))"""
         )
         return {r["id"] for r in rows}
 
@@ -593,15 +582,14 @@ class Database:
         d = dict(row)
         d["category"] = _normalise_category(d.get("category", ""), d.get("source", ""))
         d["is_product_or_tool"] = bool(d.get("is_product_or_tool", 0))
-        # Ensure competitors is always a list
-        if not d.get("competitors"):
-            d["competitors"] = []
         for f in ("tags", "competitors"):
             if d.get(f):
                 try:
                     d[f] = json.loads(d[f])
                 except Exception:
                     d[f] = []
+            else:
+                d[f] = []  # always a list, never None
         return d
 
 
