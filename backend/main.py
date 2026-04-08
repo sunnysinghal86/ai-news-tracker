@@ -183,7 +183,7 @@ async def send_digest_job():
                 if not candidates:
                     # Widen to 7 days if nothing in last 24h
                     async with get_db() as db:
-                        candidates = await db.get_top_articles(limit=20, min_relevance=5, hours=168)
+                        candidates = await db.get_top_articles(limit=30, min_relevance=5, hours=168)
 
                 if not candidates:
                     logger.info(f"No articles for {user.email} — skipping")
@@ -381,11 +381,11 @@ async def test_digest(email: str, _=Depends(require_admin)):
 
     # Fetch candidates — try 24h first, fallback to 7 days
     async with get_db() as db:
-        candidates = await db.get_top_articles(limit=20, min_relevance=user.min_relevance or 5,
+        candidates = await db.get_top_articles(limit=30, min_relevance=user.min_relevance or 5,
                                                 categories=getattr(user,"categories",None), hours=24)
     if not candidates:
         async with get_db() as db:
-            candidates = await db.get_top_articles(limit=20, min_relevance=5, hours=168)
+            candidates = await db.get_top_articles(limit=30, min_relevance=5, hours=168)
     if not candidates:
         return {"error": "No articles in DB — run a refresh first"}
 

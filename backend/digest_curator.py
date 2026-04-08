@@ -238,23 +238,21 @@ def find_sleeper(all_articles: List[dict], selected_ids: set) -> Optional[dict]:
 def adaptive_count(articles: List[dict]) -> int:
     """
     Return the right number of articles for this digest.
-    - If there's a dominant story (score 9-10): fewer articles, let it breathe
-    - Normal week: 5-8 articles
-    - Quiet week: 3-5 articles
+    Minimum 10 — subscribers expect a full briefing.
+    Scales up to 14 on high-signal weeks.
     """
     scores = [a.get("relevance_score", 0) for a in articles]
     if not scores:
-        return 5
+        return 10
 
-    top_score = max(scores)
     high_count = sum(1 for s in scores if s >= 8)
 
-    if top_score >= 9 and high_count <= 2:
-        return 4   # big story week — focus
+    if high_count >= 8:
+        return 14  # very strong week — show more
     elif high_count >= 5:
-        return 8   # diverse high-quality week — show more
+        return 12  # solid week
     else:
-        return 6   # normal week
+        return 10  # minimum — always send at least 10
 
 
 # ── Main curator entry point ──────────────────────────────────────────────────

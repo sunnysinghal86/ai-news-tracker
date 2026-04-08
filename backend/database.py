@@ -60,14 +60,10 @@ _VALID_CATS = {
 }
 
 # Sources that always produce research content — override Claude's category
-_RESEARCH_SOURCES = {"arXiv", "MIT AI News"}
-_COMPANY_BLOG_SOURCES = {"Anthropic Blog", "OpenAI Blog", "Google DeepMind",
-                          "Google Research", "Google AI Blog", "AWS AI Blog"}
+_COMPANY_BLOG_SOURCES = {"Anthropic Blog", "OpenAI Blog", "Google AI Blog", "AWS AI Blog"}
 
 def _normalise_category(raw: str, source: str = "") -> str:
     # Source-based overrides take priority over Claude's output
-    if source in _RESEARCH_SOURCES:
-        return "Research Paper"
     if source in _COMPANY_BLOG_SOURCES:
         # Company blogs publish both models and products — trust Claude but fix bad defaults
         if raw in _VALID_CATS and raw != "Industry News":
@@ -303,9 +299,14 @@ class Database:
         conditions = ["1=1"]
         params = []
         if days:
-            # substr(published_at, 1, 10) extracts YYYY-MM-DD — works for any ISO format
-            # including "2026-01-23T10:00:00+00:00" or "2026-01-23 10:00:00"
-            conditions.append("substr(published_at, 1, 10) >= date('now', ? || ' days')")
+            # Use MAX(published_at, fetched_at) — if either is recent, show the article.
+            # fetched_at is always set correctly (DEFAULT datetime('now')).
+            # This handles articles where published_at is NULL, empty, or malformed.
+            conditions.append(
+                "MAX(COALESCE(substr(published_at,1,10),'1970-01-01'), "
+                "    COALESCE(substr(fetched_at,1,10),'1970-01-01')) "
+                ">= date('now', ? || ' days')"
+            )
             params.append(f"-{days}")
         if category:
             conditions.append("category = ?")
@@ -342,20 +343,31 @@ class Database:
         )
         return [self._to_dict(r) for r in rows]
 
-    async def get_top_articles(self, limit=10, min_relevance=5,
+    # Active sources for digest — retired sources excluded even if still in DB
+    ACTIVE_SOURCES = [
+        "Medium", "platformengineering.org", "Anthropic Blog",
+        "OpenAI Blog", "Google AI Blog", "AWS AI Blog", "NewsAPI",
+    ]
+
+    async def get_top_articles(self, limit=30, min_relevance=5,
                                categories=None, hours=24):
+        # Build source filter — only serve from active sources
+        src_placeholders = ",".join("?" * len(self.ACTIVE_SOURCES))
+        src_clause = f"AND source IN ({src_placeholders})"
+
         for window in [hours, 48, 168]:
-            params = [min_relevance, window]
+            params = [min_relevance, window] + list(self.ACTIVE_SOURCES)
             cat_clause = ""
             if categories:
                 placeholders = ",".join("?" * len(categories))
                 cat_clause = f"AND category IN ({placeholders})"
-                params = [min_relevance, window] + list(categories)
+                params = [min_relevance, window] + list(self.ACTIVE_SOURCES) + list(categories)
             query = f"""
                 SELECT * FROM articles
                 WHERE relevance_score >= ?
                 AND summary IS NOT NULL AND LENGTH(summary) > 40
                 AND fetched_at >= datetime('now', '-' || ? || ' hours')
+                {src_clause}
                 {cat_clause}
                 ORDER BY relevance_score DESC, fetched_at DESC
                 LIMIT {limit}
@@ -365,11 +377,14 @@ class Database:
             if len(articles) >= 5:
                 logger.info(f"Digest: {len(articles)} articles from last {window}h")
                 return articles
+        # Fallback — no time filter but still restrict to active sources
+        params = [min_relevance] + list(self.ACTIVE_SOURCES) + [limit]
         rows = await self._query(
-            "SELECT * FROM articles WHERE relevance_score >= ? "
-            "AND summary IS NOT NULL AND LENGTH(summary) > 40 "
-            "ORDER BY relevance_score DESC LIMIT ?",
-            (min_relevance, limit),
+            f"SELECT * FROM articles WHERE relevance_score >= ? "
+            f"AND summary IS NOT NULL AND LENGTH(summary) > 40 "
+            f"AND source IN ({src_placeholders}) "
+            f"ORDER BY relevance_score DESC LIMIT ?",
+            params,
         )
         return [self._to_dict(r) for r in rows]
 
