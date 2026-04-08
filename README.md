@@ -4,7 +4,7 @@
 
 ### The Intelligence Briefing for AI Engineers
 
-*Tracks AI/ML news across 7 curated sources — Medium · PE.org · Anthropic · OpenAI · Google AI Blog · AWS AI Blog · NewsAPI*  
+*Tracks AI/ML news across 10 curated sources — Medium · PE.org · Anthropic · OpenAI · Google AI · AWS · NewsAPI · Stack Overflow · InfoQ · The New Stack*  
 *Claude-powered summaries · Competitor analysis · Daily email digest*
 
 ---
@@ -19,7 +19,7 @@
 
 > **Every morning you open seven tabs, skim thirty headlines, and still feel like you missed something.**
 
-AI Signal fixes that. One beautifully designed briefing lands in your inbox at 8 AM — curated from 7 high-signal sources engineers actually read, summarised by Claude, scored for relevance to *your* stack, and enriched with competitive intelligence on every new tool or model that matters.
+AI Signal fixes that. One beautifully designed briefing lands in your inbox at 8 AM — curated from 10 high-signal sources engineers actually read, summarised by Claude, scored for relevance to *your* stack, and enriched with competitive intelligence on every new tool or model that matters.
 
 It's not a newsletter you subscribed to and forgot. It's infrastructure you own.
 
@@ -43,7 +43,7 @@ It's not a newsletter you subscribed to and forgot. It's infrastructure you own.
 
 | Feature | Details |
 |---|---|
-| **7 Sources** | Medium, platformengineering.org, Anthropic Blog, OpenAI Blog, Google AI Blog, AWS AI Blog, NewsAPI |
+| **10 Sources** | Medium, PE.org, Anthropic Blog, OpenAI Blog, Google AI Blog, AWS AI Blog, NewsAPI, Stack Overflow Blog, InfoQ, The New Stack |
 | **Claude Haiku Summaries** | 2–3 sentence digest per article — powered by full article body extraction via trafilatura |
 | **Competitor Analysis** | For every product/tool/model: lists rivals + *how this one differs* |
 | **Relevance Scoring** | 1–10 score weighted toward Software Dev & Platform Engineering |
@@ -456,7 +456,7 @@ These tests directly encode critical product behaviours:
 │                                                                     │
 │  news_fetcher.py          summarizer.py          database.py        │
 │  ─────────────────        ─────────────          ───────────        │
-│  Fetch 7 sources   →     quality_score()   →    get_summarised     │
+│  Fetch 10 sources   →     quality_score()   →    get_summarised     │
 │  concurrently             rank articles          _ids()             │
 │  (asyncio.gather)                                                   │
 │                           cap at 20              skip already-      │
@@ -534,6 +534,7 @@ Email            Resend API (free tier: 3,000/month)
 Database         Turso (libSQL cloud SQLite) — persistent, survives restarts, free tier
 News Sources     Medium · platformengineering.org · Anthropic Blog · OpenAI Blog
                  Google AI Blog · AWS AI Blog · NewsAPI
+                 Stack Overflow Blog · InfoQ · The New Stack
 Article Extract  trafilatura (full body) → og:description fallback → raw RSS snippet
 Frontend         React 18 · Vite · Custom editorial CSS (no component library)
 Typography       Playfair Display · Source Serif 4 · Barlow Condensed
