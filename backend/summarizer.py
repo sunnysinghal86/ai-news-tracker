@@ -194,8 +194,9 @@ async def _analyse_article(article: RawArticle, session: aiohttp.ClientSession) 
         "  Industry News — funding, acquisition, company news, opinion\n"
         "is_product_or_tool: set true if article is about a specific named product, tool, model, "
         "framework, SDK, platform, or service — NOT for general news or opinion.\n"
-        "If is_product_or_tool=true, you MUST include 2-3 real named competitors with "
-        "specific comparisons. Do not leave competitors empty.\n"
+        "IMPORTANT: if category is AI Model, Product/Tool, or Platform/Infrastructure, "
+        "is_product_or_tool MUST be true and you MUST name 2-3 real competitors.\n"
+        "If is_product_or_tool=true, competitors cannot be empty — always name real products.\n"
         "relevance: 9-10=AI infra/MLOps, 7-8=major model/framework, 5-6=AI news, 1-4=weak\n\n"
         '{"summary":"2-3 sentences focused on what changed and why it matters for engineers",'
         '"category":"<EXACT name from list above, no extra text>",'
@@ -236,7 +237,12 @@ async def _analyse_article(article: RawArticle, session: aiohttp.ClientSession) 
         base.relevance_score = int(data.get("relevance_score", 5))
         base.is_product_or_tool = bool(data.get("is_product_or_tool", False))
         base.product_name = data.get("product_name", "")
-        base.competitors = data.get("competitors", []) if base.is_product_or_tool else []
+        # Keep competitors if explicitly provided OR if category implies a product
+        product_categories = {"AI Model", "Product/Tool", "Platform/Infrastructure"}
+        is_product = base.is_product_or_tool or base.category in product_categories
+        base.competitors = data.get("competitors", []) if is_product else []
+        if is_product and not base.is_product_or_tool:
+            base.is_product_or_tool = True  # align flag with category
         base.competitive_advantage = data.get("competitive_advantage", "")
     except (json.JSONDecodeError, ValueError) as e:
         logger.warning(f"JSON parse error for '{article.title[:40]}': {e}")

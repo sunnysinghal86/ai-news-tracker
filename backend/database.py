@@ -246,12 +246,16 @@ class Database:
 
     async def get_summarised_ids(self) -> set:
         """Returns IDs already processed — articles with a summary and
-        product articles that have competitor data."""
+        product/AI Model articles that have competitor data.
+        Only re-queues recent articles (last 14 days) to avoid mass reprocessing."""
         rows = await self._query(
             """SELECT id FROM articles
                WHERE LENGTH(summary) > 20
-               AND NOT (is_product_or_tool=1
-                        AND (competitors IS NULL OR competitors='[]'))"""
+               AND NOT (
+                   is_product_or_tool=1
+                   AND (competitors IS NULL OR competitors='[]')
+                   AND fetched_at >= datetime('now', '-14 days')
+               )"""
         )
         return {r["id"] for r in rows}
 
@@ -294,7 +298,7 @@ class Database:
                            source=None, min_relevance=0, search=None,
                            days=7):
         """
-        Return articles from the last `days` days (default 7 — UI shows fresh content).
+        Return articles from the last `days` days (default 7).
         Older articles are kept in DB for digest fallback but hidden from the UI feed.
         Set days=0 to return all articles regardless of age.
         """
