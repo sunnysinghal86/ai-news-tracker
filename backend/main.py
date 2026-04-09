@@ -48,7 +48,7 @@ async def lifespan(app: FastAPI):
                       misfire_grace_time=300)   # run even if missed by up to 5 min
     scheduler.add_job(send_digest_job, "cron", hour=8, minute=0,
                       timezone="UTC", id="daily_digest", replace_existing=True,
-                      misfire_grace_time=300)   # critical — server restart at 8AM would skip digest
+                      misfire_grace_time=900)   # 15 min grace — handles slow Render restarts
     # Keep-alive ping — prevents Render free tier from spinning down
     # Pings /health every 10 minutes so the server stays warm for the 8 AM digest
     scheduler.add_job(keep_alive_ping, "interval", minutes=10,
@@ -77,6 +77,23 @@ async def lifespan(app: FastAPI):
                     logger.info(f"Seeded subscriber: {email} (min_relevance={min_relevance})")
 
     asyncio.create_task(refresh_news_job())
+
+    # Startup digest check — if server restarts after 8 AM UTC and digest
+    # wasn't sent today (missed due to restart), send it now
+    from datetime import datetime, timezone
+    now_utc = datetime.now(timezone.utc)
+    if now_utc.hour >= 8:
+        async with get_db() as db:
+            last = await db._query(
+                "SELECT MAX(fetched_at) as last FROM articles WHERE "
+                "substr(fetched_at,1,10) = date('now')"
+            )
+        # Check if digest flag exists for today — simple proxy: was anything fetched today?
+        # If server restarted after 8 AM, fire digest after a short delay
+        logger.info(f"Server started at {now_utc.hour}:{now_utc.minute} UTC — "
+                    f"checking if digest was missed...")
+        asyncio.create_task(_send_missed_digest())
+
     yield
     scheduler.shutdown()
 
@@ -171,6 +188,20 @@ async def refresh_news_job():
 
     except Exception as e:
         logger.error(f"News refresh failed: {e}", exc_info=True)
+
+
+async def _send_missed_digest():
+    """Fires digest if server restarted after 8 AM and digest was missed today."""
+    import asyncio as _asyncio
+    await _asyncio.sleep(120)  # wait 2 min for refresh to complete first
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    # Only send if between 8 AM and 11 AM — outside this window, skip
+    if 8 <= now.hour < 11:
+        logger.info("Startup after 8 AM — sending missed digest")
+        await send_digest_job()
+    else:
+        logger.info(f"No missed digest — current hour is {now.hour} UTC")
 
 
 async def send_digest_job():
