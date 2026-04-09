@@ -324,6 +324,8 @@ class Database:
         if search:
             conditions.append("(title LIKE ? OR summary LIKE ?)")
             params.extend([f"%{search}%", f"%{search}%"])
+        # Always require a meaningful summary — don't show thin/failed articles on UI
+        conditions.append("summary IS NOT NULL AND LENGTH(summary) > 20")
         where = " AND ".join(conditions)
         # Use ROW_NUMBER to limit max 5 articles per source in UI results.
         # This prevents any single source (Medium: 61 articles) from dominating
