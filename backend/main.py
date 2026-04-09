@@ -359,28 +359,42 @@ async def get_summary():
 
 @app.post("/api/reprocess-rivals")
 async def reprocess_rivals(_=Depends(require_admin)):
-    """Force re-analyse all product/tool articles that have no competitor data."""
+    """
+    Force re-analyse articles missing competitor data.
+    Targets:
+    - is_product_or_tool=1 with no competitors
+    - AI Model / Product/Tool / Platform/Infrastructure category with no competitors
+    Limited to last 14 days to avoid mass reprocessing.
+    """
     try:
         async with get_db() as db:
-            async with db._db.execute(
-                """SELECT id FROM articles
-                   WHERE is_product_or_tool = 1
+            rows = await db._query(
+                """SELECT id, category, is_product_or_tool FROM articles
+                   WHERE (
+                       is_product_or_tool = 1
+                       OR category IN ('AI Model', 'Product/Tool', 'Platform/Infrastructure')
+                   )
                    AND (competitors IS NULL OR competitors = '[]' OR competitors = '')
-                   AND summary IS NOT NULL AND LENGTH(summary) > 40"""
-            ) as cur:
-                rows = await cur.fetchall()
+                   AND summary IS NOT NULL AND LENGTH(summary) > 40
+                   AND substr(published_at,1,10) >= date('now', '-14 days')
+                   ORDER BY published_at DESC"""
+            )
             ids_to_reset = [r["id"] for r in rows]
 
             if ids_to_reset:
+                # Clear summary so get_summarised_ids re-queues them for Claude
                 placeholders = ",".join("?" * len(ids_to_reset))
-                await db._db.execute(
-                    f"UPDATE articles SET summary = '' WHERE id IN ({placeholders})",
-                    ids_to_reset
+                await db._exec(
+                    f"UPDATE articles SET summary = '', is_product_or_tool = 1 "
+                    f"WHERE id IN ({placeholders})",
+                    tuple(ids_to_reset)
                 )
-                await db._db.commit()
+            logger.info(f"Flagged {len(ids_to_reset)} articles for rivals re-analysis")
 
-        logger.info(f"Flagged {len(ids_to_reset)} product articles for re-analysis")
-        return {"message": f"Flagged {len(ids_to_reset)} articles — trigger a refresh to re-analyse them"}
+        return {
+            "message": f"Flagged {len(ids_to_reset)} articles — trigger a refresh to re-analyse",
+            "articles": [{"id": r["id"], "category": r["category"]} for r in rows[:10]]
+        }
     except Exception as e:
         logger.error(f"Reprocess rivals failed: {e}")
         return {"error": str(e)}
