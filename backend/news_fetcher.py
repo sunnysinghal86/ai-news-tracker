@@ -213,6 +213,13 @@ async def fetch_hackernews(session: aiohttp.ClientSession) -> List[RawArticle]:
 
 # ─────────────────────────────────────────────
 # ─────────────────────────────────────────────
+# Reputable tech/AI news domains — prevents PyPI/Yahoo/spam results
+NEWSAPI_DOMAINS = (
+    "techcrunch.com,wired.com,theverge.com,arstechnica.com,"
+    "venturebeat.com,thenextweb.com,zdnet.com,infoworld.com,"
+    "technologyreview.com,spectrum.ieee.org"
+)
+
 async def fetch_newsapi(session: aiohttp.ClientSession) -> List[RawArticle]:
     """Fetch AI/tech news from reputable sources via NewsAPI."""
     if not NEWS_API_KEY:

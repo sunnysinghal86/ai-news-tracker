@@ -78,20 +78,13 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(refresh_news_job())
 
-    # Startup digest check — if server restarts after 8 AM UTC and digest
-    # wasn't sent today (missed due to restart), send it now
+    # Startup digest check — send missed digest any time server starts after 8 AM UTC
+    # Uses a DB flag to track whether digest was sent today
     from datetime import datetime, timezone
     now_utc = datetime.now(timezone.utc)
     if now_utc.hour >= 8:
-        async with get_db() as db:
-            last = await db._query(
-                "SELECT MAX(fetched_at) as last FROM articles WHERE "
-                "substr(fetched_at,1,10) = date('now')"
-            )
-        # Check if digest flag exists for today — simple proxy: was anything fetched today?
-        # If server restarted after 8 AM, fire digest after a short delay
         logger.info(f"Server started at {now_utc.hour}:{now_utc.minute} UTC — "
-                    f"checking if digest was missed...")
+                    f"will check for missed digest after startup")
         asyncio.create_task(_send_missed_digest())
 
     yield
@@ -191,17 +184,45 @@ async def refresh_news_job():
 
 
 async def _send_missed_digest():
-    """Fires digest if server restarted after 8 AM and digest was missed today."""
+    """
+    Fires digest if server restarted and digest hasn't been sent today.
+    Checks DB for a digest_sent_date marker — if not today, sends digest.
+    Waits 3 min after startup to let the refresh job run first.
+    """
     import asyncio as _asyncio
-    await _asyncio.sleep(120)  # wait 2 min for refresh to complete first
+    await _asyncio.sleep(180)  # wait 3 min for refresh to complete first
+
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
-    # Only send if between 8 AM and 11 AM — outside this window, skip
-    if 8 <= now.hour < 11:
-        logger.info("Startup after 8 AM — sending missed digest")
+    today = now.strftime("%Y-%m-%d")
+
+    # Check if digest was already sent today using a simple marker in DB
+    try:
+        async with get_db() as db:
+            rows = await db._query(
+                "SELECT value FROM kv_store WHERE key='digest_sent_date'"
+            )
+            last_sent = rows[0]["value"] if rows else None
+
+        if last_sent == today:
+            logger.info(f"Digest already sent today ({today}) — skipping")
+            return
+
+        logger.info(f"Digest not sent today (last={last_sent}) — sending now")
         await send_digest_job()
-    else:
-        logger.info(f"No missed digest — current hour is {now.hour} UTC")
+
+        # Mark digest as sent today
+        async with get_db() as db:
+            await db._exec(
+                "INSERT OR REPLACE INTO kv_store (key, value) VALUES ('digest_sent_date', ?)",
+                (today,)
+            )
+    except Exception as e:
+        # kv_store table might not exist yet — fall back to hour-based check
+        logger.warning(f"Digest flag check failed ({e}) — using hour fallback")
+        if 8 <= now.hour < 23:
+            logger.info("Sending missed digest (hour fallback)")
+            await send_digest_job()
 
 
 async def send_digest_job():
@@ -255,6 +276,15 @@ async def send_digest_job():
             if i < len(active_users) - 1:
                 await asyncio.sleep(1)
         logger.info(f"Digest complete — {len(active_users)} users")
+
+        # Mark digest as sent today so startup check doesn't re-send
+        from datetime import datetime, timezone
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        async with get_db() as db:
+            await db._exec(
+                "INSERT OR REPLACE INTO kv_store (key, value) VALUES ('digest_sent_date', ?)",
+                (today,)
+            )
     except Exception as e:
         logger.error(f"Digest failed: {e}", exc_info=True)
 
@@ -358,46 +388,91 @@ async def get_summary():
 
 
 @app.post("/api/reprocess-rivals")
-async def reprocess_rivals(_=Depends(require_admin)):
+async def reprocess_rivals(background_tasks: BackgroundTasks, _=Depends(require_admin)):
     """
-    Force re-analyse articles missing competitor data.
-    Targets:
-    - is_product_or_tool=1 with no competitors
-    - AI Model / Product/Tool / Platform/Infrastructure category with no competitors
-    Limited to last 14 days to avoid mass reprocessing.
+    Re-run Claude on AI Model/Product/Tool articles missing competitor data.
+    Calls Claude directly on DB articles — does not wait for a fetch cycle.
+    Limited to last 14 days, max 20 articles to control cost.
     """
+    background_tasks.add_task(_reprocess_rivals_job)
+    return {"message": "Rivals reprocessing started in background — check logs"}
+
+
+async def _reprocess_rivals_job():
+    """Directly re-runs Claude on articles missing rivals."""
+    import aiohttp as _aiohttp
+    from summarizer import summarize_articles, enrich_all
+    from news_fetcher import RawArticle
+    from datetime import datetime, timezone
+
+    logger.info("Reprocessing rivals for AI Model / Product/Tool articles...")
     try:
         async with get_db() as db:
             rows = await db._query(
-                """SELECT id, category, is_product_or_tool FROM articles
+                """SELECT * FROM articles
                    WHERE (
                        is_product_or_tool = 1
                        OR category IN ('AI Model', 'Product/Tool', 'Platform/Infrastructure')
                    )
                    AND (competitors IS NULL OR competitors = '[]' OR competitors = '')
-                   AND summary IS NOT NULL AND LENGTH(summary) > 40
+                   AND summary IS NOT NULL AND LENGTH(summary) > 20
                    AND substr(published_at,1,10) >= date('now', '-14 days')
-                   ORDER BY published_at DESC"""
+                   ORDER BY relevance_score DESC
+                   LIMIT 20"""
             )
-            ids_to_reset = [r["id"] for r in rows]
 
-            if ids_to_reset:
-                # Clear summary so get_summarised_ids re-queues them for Claude
-                placeholders = ",".join("?" * len(ids_to_reset))
-                await db._exec(
-                    f"UPDATE articles SET summary = '', is_product_or_tool = 1 "
-                    f"WHERE id IN ({placeholders})",
-                    tuple(ids_to_reset)
-                )
-            logger.info(f"Flagged {len(ids_to_reset)} articles for rivals re-analysis")
+        if not rows:
+            logger.info("No articles need rivals reprocessing")
+            return
 
-        return {
-            "message": f"Flagged {len(ids_to_reset)} articles — trigger a refresh to re-analyse",
-            "articles": [{"id": r["id"], "category": r["category"]} for r in rows[:10]]
-        }
+        logger.info(f"Reprocessing {len(rows)} articles for rivals")
+
+        # Convert DB rows to RawArticle objects for summarizer
+        articles_to_process = []
+        for r in rows:
+            try:
+                pub = datetime.fromisoformat(r["published_at"].replace("Z", "+00:00"))
+            except Exception:
+                pub = datetime.now(timezone.utc)
+
+            articles_to_process.append(RawArticle(
+                id=r["id"],
+                title=r["title"],
+                url=r["url"],
+                source=r["source"],
+                published_at=pub,
+                content=r.get("summary", ""),  # use existing summary as content
+                author=r.get("author", ""),
+                tags=["reprocess"],
+                score=0,
+            ))
+
+        # Re-run Claude with rivals-focused prompt
+        processed = await summarize_articles(articles_to_process)
+        logger.info(f"Reprocessed {len(processed)} articles")
+
+        # Update only competitors/rivals fields — preserve existing summary
+        async with get_db() as db:
+            for p in processed:
+                if p.competitors:
+                    await db._exec(
+                        """UPDATE articles SET
+                            competitors=?, competitive_advantage=?,
+                            is_product_or_tool=1, product_name=?
+                           WHERE id=?""",
+                        (
+                            __import__("json").dumps(p.competitors),
+                            p.competitive_advantage,
+                            p.product_name,
+                            p.id,
+                        )
+                    )
+            if TURSO_URL and TURSO_TOKEN:
+                db._conn.sync()
+        logger.info("Rivals reprocessing complete")
+
     except Exception as e:
-        logger.error(f"Reprocess rivals failed: {e}")
-        return {"error": str(e)}
+        logger.error(f"Rivals reprocessing failed: {e}", exc_info=True)
 
 @app.post("/api/trigger-refresh")
 async def trigger_refresh(background_tasks: BackgroundTasks, _=Depends(require_admin)):

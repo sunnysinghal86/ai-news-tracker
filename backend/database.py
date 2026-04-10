@@ -201,6 +201,11 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS idx_articles_relevance ON articles(relevance_score)",
                 "CREATE INDEX IF NOT EXISTS idx_articles_category ON articles(category)",
                 "CREATE INDEX IF NOT EXISTS idx_articles_fetched ON articles(fetched_at)",
+                # Key-value store for app state (e.g. digest_sent_date)
+                """CREATE TABLE IF NOT EXISTS kv_store (
+                    key   TEXT PRIMARY KEY,
+                    value TEXT
+                )""",
                 """CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     email TEXT UNIQUE NOT NULL,
