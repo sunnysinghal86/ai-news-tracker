@@ -556,7 +556,7 @@ export default function App() {
                     { label: "Articles Indexed",  val: stats?.total_articles || 0 },
                     { label: "Products & Tools",   val: stats?.product_articles || 0 },
                     { label: "Sources Active",     val: 10 },
-                    { label: "Subscribers",        val: usersData?.users?.length || 0 },
+                    { label: "Subscribers",        val: summary?.subscriber_count ?? 0 },
                   ].map(({ label, val }) => (
                     <div key={label} style={{ padding: "18px 0 16px", borderRight: `1px solid ${T.rule}`, textAlign: "center" }}>
                       <div style={{ fontFamily: "'Playfair Display', serif", fontSize: "36px", fontWeight: 900, lineHeight: 1, color: T.ink }}>{val}</div>
