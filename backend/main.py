@@ -373,6 +373,7 @@ async def get_summary():
         "total_articles":       s["total_articles"],
         "product_articles":     s["product_articles"],
         "by_category":          s["by_category"],
+        "subscriber_count":     s.get("subscriber_count", 0),
         "anthropic_configured": bool(os.getenv("ANTHROPIC_API_KEY")),
         "resend_configured":    bool(os.getenv("RESEND_API_KEY")),
         "news_api_configured":  bool(os.getenv("NEWS_API_KEY")),

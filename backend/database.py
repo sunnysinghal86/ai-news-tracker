@@ -464,10 +464,15 @@ class Database:
             "SELECT category, COUNT(*) as n FROM articles "
             "GROUP BY category ORDER BY n DESC"
         )
+        sub_rows = await self._query(
+            "SELECT COUNT(*) as n FROM users WHERE active=1"
+        )
+        subscriber_count = sub_rows[0]["n"] if sub_rows else 0
         return {
             "total_articles":   total,
             "product_articles": products,
             "by_category":      {r["category"]: r["n"] for r in cats},
+            "subscriber_count": subscriber_count,
         }
 
     # ── Users ─────────────────────────────────────────────────────────────────
