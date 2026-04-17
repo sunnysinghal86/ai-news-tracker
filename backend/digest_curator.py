@@ -54,8 +54,8 @@ def is_low_substance(article: dict) -> bool:
         if re.search(pattern, title):
             return True
 
-    # Very short summary — likely enrichment failed and article is thin
-    if len(summary) < 60:
+    # Very short summary — likely enrichment failed
+    if len(summary) < 20:
         return True
 
     return False
@@ -277,7 +277,15 @@ async def curate_digest(
         return {"stories": [], "sleeper": None, "trends": [], "article_count": 0}
 
     # Step 1 — filter noise
-    clean = [a for a in articles if not is_low_substance(a)]
+    clean = []
+    filtered = []
+    for a in articles:
+        if is_low_substance(a):
+            filtered.append(a.get("title","")[:60])
+        else:
+            clean.append(a)
+    if filtered:
+        logger.info(f"Noise filter removed {len(filtered)}: {filtered[:3]}")
     logger.info(f"Digest curation: {len(articles)} → {len(clean)} after noise filter")
 
     # Step 2 — cluster into stories
