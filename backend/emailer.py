@@ -163,7 +163,7 @@ async def send_daily_digest(user, digest: dict) -> bool:
         return False
     date_str    = datetime.now().strftime("%b %d, %Y")
     total       = digest.get("article_count", 0)
-    subject     = f"AI Signal \u00b7 {date_str} \u00b7 {total} stories worth reading"
+    subject     = f"AI Signal \u00b7 {date_str} \u00b7 {total} stories"
     unsub_token = getattr(user, "unsubscribe_token", "") or ""
     html        = build_html_email(user.name or "there", digest, unsubscribe_token=unsub_token)
     return await send_email(user.email, subject, html)
@@ -204,20 +204,6 @@ async def send_email(to_email: str, subject: str, html_body: str) -> bool:
     except Exception as e:
         logger.error(f"Email send error: {e}")
         return False
-
-
-async def send_daily_digest(user, articles: List[dict]) -> bool:
-    """Send daily digest to a user. Articles are pre-filtered by caller."""
-    if not articles:
-        logger.info(f"No articles to send to {user.email}")
-        return False
-    
-    date_str = datetime.now().strftime("%b %d, %Y")
-    subject = f"🤖 AI News Digest – {date_str} ({len(articles)} stories)"
-    
-    unsub_token = getattr(user, "unsubscribe_token", "") or ""
-    html = build_html_email(user.name or "there", articles, unsubscribe_token=unsub_token)
-    return await send_email(user.email, subject, html)
 
 
 async def send_approval_request(
