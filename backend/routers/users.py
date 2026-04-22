@@ -12,7 +12,7 @@ Existing endpoints unchanged:
   DELETE /api/users/{email}
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from database import get_db
