@@ -217,14 +217,25 @@ async def list_pending():
 # ── Existing endpoints ────────────────────────────────────────────────────────
 
 @router.get("")
-async def list_users():
+async def list_users(request: Request):
+    # Simple API key check for subscriber list
+    admin_key = request.headers.get("X-Admin-Key", "")
+    expected  = os.getenv("ADMIN_API_KEY", "")
+    if expected and admin_key != expected:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
     async with get_db() as db:
         users = await db.get_active_users()
     return {"users": [u.to_dict() for u in users]}
 
 
 @router.delete("/{email}")
-async def delete_user(email: str):
+async def delete_user(email: str, request: Request):
+    admin_key = request.headers.get("X-Admin-Key", "")
+    expected  = os.getenv("ADMIN_API_KEY", "")
+    if expected and admin_key != expected:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
     async with get_db() as db:
         await db.delete_user(email)
     return {"message": f"User {email} removed"}
