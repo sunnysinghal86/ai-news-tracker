@@ -224,6 +224,16 @@ class Database:
                     article_count INTEGER,
                     status TEXT
                 )""",
+                # Tracks which articles were sent to each subscriber
+                # Prevents same articles appearing in consecutive digests
+                """CREATE TABLE IF NOT EXISTS digest_sent_articles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    recipient_email TEXT NOT NULL,
+                    article_id TEXT NOT NULL,
+                    sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE(recipient_email, article_id)
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_digest_sent ON digest_sent_articles(recipient_email, sent_at)",
             ]
             for stmt in stmts:
                 self._conn.execute(stmt)
@@ -362,7 +372,7 @@ class Database:
     ]
 
     async def get_top_articles(self, limit=30, min_relevance=5,
-                               categories=None, hours=24):
+                               categories=None, hours=24, exclude_ids: set = None):
         """
         Fetch top articles for digest.
         min_relevance is used as a PREFERENCE not a hard cutoff —
@@ -380,9 +390,17 @@ class Database:
             cat_clause = f"AND category IN ({placeholders})"
             cat_params = list(categories)
 
+        # Build exclusion clause for already-sent articles
+        excl_clause = ""
+        excl_params = []
+        if exclude_ids:
+            excl_placeholders = ",".join("?" * len(exclude_ids))
+            excl_clause = f"AND id NOT IN ({excl_placeholders})"
+            excl_params = list(exclude_ids)
+
         # Try preferred window with min_relevance
         for window in [hours, 48, 168]:
-            params = [min_relevance, window] + list(self.ACTIVE_SOURCES) + cat_params
+            params = [min_relevance, window] + list(self.ACTIVE_SOURCES) + cat_params + excl_params
             rows = await self._query(f"""
                 SELECT * FROM (
                     SELECT *,
@@ -394,7 +412,7 @@ class Database:
                     WHERE relevance_score >= ?
                     AND summary IS NOT NULL AND LENGTH(summary) > 40
                     AND fetched_at >= datetime('now', '-' || ? || ' hours')
-                    {src_clause} {cat_clause}
+                    {src_clause} {cat_clause} {excl_clause}
                 ) ranked
                 WHERE rn <= 5
                 ORDER BY relevance_score DESC, fetched_at DESC
@@ -407,7 +425,7 @@ class Database:
 
         # Fallback — drop min_relevance entirely, return best available by score
         logger.info(f"Digest: falling back to score>=5, no time limit")
-        params = [5] + list(self.ACTIVE_SOURCES) + cat_params + [limit]
+        params = [5] + list(self.ACTIVE_SOURCES) + cat_params + excl_params + [limit]
         rows = await self._query(f"""
             SELECT * FROM (
                 SELECT *,
@@ -418,7 +436,7 @@ class Database:
                 FROM articles
                 WHERE relevance_score >= 5
                 AND summary IS NOT NULL AND LENGTH(summary) > 40
-                {src_clause} {cat_clause}
+                {src_clause} {cat_clause} {excl_clause}
             ) ranked
             WHERE rn <= 5
             ORDER BY relevance_score DESC, fetched_at DESC
@@ -541,6 +559,34 @@ class Database:
             min_relevance=r["min_relevance"],
             approval_token=r.get("approval_token"),
             unsubscribe_token=r.get("unsubscribe_token"),
+        )
+
+    async def get_sent_article_ids(self, email: str, days: int = 3) -> set:
+        """Returns article IDs already sent to this subscriber in the last N days."""
+        rows = await self._query(
+            "SELECT article_id FROM digest_sent_articles "
+            "WHERE recipient_email = ? "
+            "AND sent_at >= datetime('now', ? || ' days')",
+            (email, f"-{days}")
+        )
+        return {r["article_id"] for r in rows}
+
+    async def mark_articles_sent(self, email: str, article_ids: List[str]):
+        """Record which articles were sent in today's digest."""
+        for aid in article_ids:
+            try:
+                await self._exec(
+                    "INSERT OR IGNORE INTO digest_sent_articles "
+                    "(recipient_email, article_id) VALUES (?, ?)",
+                    (email, aid)
+                )
+            except Exception:
+                pass  # UNIQUE constraint — already recorded
+
+        # Clean up old records > 7 days to keep table small
+        await self._exec(
+            "DELETE FROM digest_sent_articles "
+            "WHERE sent_at < datetime('now', '-7 days')"
         )
 
     async def get_active_users(self) -> List["User"]:

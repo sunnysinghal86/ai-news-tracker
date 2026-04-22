@@ -233,19 +233,29 @@ async def send_digest_job():
 
         async def send_one(user):
             try:
-                # Step 1 — fetch candidate articles for this subscriber
+                # Step 1 — get article IDs already sent to this subscriber (last 3 days)
+                async with get_db() as db:
+                    already_sent = await db.get_sent_article_ids(user.email, days=3)
+                if already_sent:
+                    logger.info(f"Excluding {len(already_sent)} already-sent articles for {user.email}")
+
+                # Step 2 — fetch candidate articles excluding already-sent ones
                 async with get_db() as db:
                     candidates = await db.get_top_articles(
-                        limit=20,
+                        limit=30,
                         min_relevance=user.min_relevance or 5,
                         categories=user.categories or None,
                         hours=24,
+                        exclude_ids=already_sent,
                     )
 
                 if not candidates:
                     # Widen to 7 days if nothing in last 24h
                     async with get_db() as db:
-                        candidates = await db.get_top_articles(limit=30, min_relevance=5, hours=168)
+                        candidates = await db.get_top_articles(
+                            limit=30, min_relevance=5, hours=168,
+                            exclude_ids=already_sent,
+                        )
 
                 if not candidates:
                     logger.info(f"No articles for {user.email} — skipping")
@@ -266,6 +276,12 @@ async def send_digest_job():
                 success = await send_daily_digest(user, digest)
                 if success:
                     logger.info(f"Digest sent to {user.email}")
+                    # Mark articles sent — excluded from tomorrow's digest
+                    sent_ids = [a["id"] for a in digest.get("stories", [])]
+                    if digest.get("sleeper"):
+                        sent_ids.append(digest["sleeper"]["id"])
+                    async with get_db() as db:
+                        await db.mark_articles_sent(user.email, sent_ids)
                 else:
                     logger.error(f"Digest FAILED for {user.email}")
             except Exception as e:
