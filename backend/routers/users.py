@@ -12,7 +12,7 @@ Existing endpoints unchanged:
   DELETE /api/users/{email}
 """
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from database import get_db
@@ -20,6 +20,13 @@ from emailer import send_approval_request, send_email, send_rejection_email
 from typing import List, Optional
 import os
 import logging
+
+async def _require_admin(request: Request):
+    """Local admin check for user management endpoints."""
+    expected = os.getenv("ADMIN_API_KEY", "")
+    if expected and request.headers.get("X-Admin-Key", "") != expected:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=401, detail="Invalid admin key")
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -201,7 +208,7 @@ async def unsubscribe(token: str):
 # ── List pending (admin) ──────────────────────────────────────────────────────
 
 @router.get("/pending")
-async def list_pending():
+async def list_pending(_=Depends(_require_admin)):
     """Admin endpoint — list all subscribers awaiting approval."""
     async with get_db() as db:
         users = await db.get_pending_users()
@@ -217,25 +224,14 @@ async def list_pending():
 # ── Existing endpoints ────────────────────────────────────────────────────────
 
 @router.get("")
-async def list_users(request: Request):
-    # Simple API key check for subscriber list
-    admin_key = request.headers.get("X-Admin-Key", "")
-    expected  = os.getenv("ADMIN_API_KEY", "")
-    if expected and admin_key != expected:
-        from fastapi.responses import JSONResponse
-        return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+async def list_users(_=Depends(_require_admin)):
     async with get_db() as db:
         users = await db.get_active_users()
     return {"users": [u.to_dict() for u in users]}
 
 
 @router.delete("/{email}")
-async def delete_user(email: str, request: Request):
-    admin_key = request.headers.get("X-Admin-Key", "")
-    expected  = os.getenv("ADMIN_API_KEY", "")
-    if expected and admin_key != expected:
-        from fastapi.responses import JSONResponse
-        return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+async def delete_user(email: str, _=Depends(_require_admin)):
     async with get_db() as db:
         await db.delete_user(email)
     return {"message": f"User {email} removed"}
