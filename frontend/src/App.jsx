@@ -22,25 +22,27 @@ const T = {
   faint:    "#a89f8c",
 };
 
-function useApi(endpoint, params = {}) {
+function useApi(endpoint, params = {}, headers = {}) {
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(true);
-  const stableParams = JSON.stringify(params);
+  const stableParams  = JSON.stringify(params);
+  const stableHeaders = JSON.stringify(headers);
 
   const run = useCallback(async () => {
-    // Skip fetch if endpoint is null (lazy loading)
     if (!endpoint) { setLoading(false); return; }
     setLoading(true);
     try {
       const qs = new URLSearchParams(
         Object.entries(params).filter(([, v]) => v !== "" && v != null && v !== 0)
       ).toString();
-      const res = await fetch(`${API_BASE}${endpoint}${qs ? "?" + qs : ""}`);
+      const res = await fetch(`${API_BASE}${endpoint}${qs ? "?" + qs : ""}`, {
+        headers: { ...headers }
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setData(await res.json());
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [endpoint, stableParams]); // eslint-disable-line
+  }, [endpoint, stableParams, stableHeaders]); // eslint-disable-line
 
   useEffect(() => { run(); }, [run]);
   return { data, loading, refetch: run };
@@ -375,12 +377,10 @@ export default function App() {
   const [refreshing, setRefreshing]       = useState(false);
   const [activeTab, setActiveTab]         = useState("feed");
 
+
   const { data: news, loading, refetch } = useApi("/api/news", { limit: 40, ...filters });
   const { data: summary }                = useApi("/api/summary"); // stats + config in one call
-  // Load subscribers only when that tab is active — saves an API call on initial load
-  const { data: usersData, refetch: refetchUsers } = useApi(
-    activeTab === "subscribers" ? "/api/users" : null
-  );
+
   const stats = summary;
   const cfg   = summary;
 
@@ -491,7 +491,7 @@ export default function App() {
         {/* Nav */}
         <div style={{ borderTop: `3px solid ${T.ink}`, borderBottom: `1px solid ${T.ink}`, display: "flex", justifyContent: "space-between", alignItems: "stretch" }}>
           <div style={{ display: "flex" }}>
-            {[{ id: "feed", label: "FEED" }, { id: "subscribers", label: "SUBSCRIBERS" }].map(tab => (
+            {[{ id: "feed", label: "FEED" }].map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{ padding: "10px 18px", border: "none", borderRight: `1px solid ${T.rule}`, background: activeTab === tab.id ? T.ink : "transparent", color: activeTab === tab.id ? T.paper : T.muted, cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "11px", letterSpacing: "0.15em" }}>
                 {tab.label}
               </button>
@@ -611,55 +611,6 @@ export default function App() {
           </>
         )}
 
-        {/* ── SUBSCRIBERS ─────────────────────────────────────────────────── */}
-        {activeTab === "subscribers" && (
-          <div style={{ maxWidth: "700px", paddingTop: "28px" }}>
-            <DoubleRule my={0} />
-            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: "28px", margin: "18px 0 4px" }}>Subscriber Registry</h2>
-            <p style={{ color: T.muted, fontSize: "13px", margin: "0 0 20px", fontFamily: "Georgia, serif" }}>Daily digest sent at 08:00 UTC. Capacity: 75 subscribers.</p>
-            <Rule />
-            {(usersData?.users || []).length === 0 ? (
-              <p style={{ color: T.muted, fontFamily: "Georgia, serif", fontStyle: "italic" }}>No subscribers yet.</p>
-            ) : (
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr>
-                    {["Name", "Email", "Min Relevance", "Sections", ""].map(h => (
-                      <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontSize: "9px", color: T.muted, letterSpacing: "0.15em", textTransform: "uppercase", borderBottom: `2px solid ${T.ink}`, fontFamily: "'Barlow Condensed', sans-serif" }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {(usersData?.users || []).map((u, i) => (
-                    <tr key={u.email} style={{ borderBottom: `1px solid ${T.rule}`, background: i % 2 === 0 ? T.cream : T.paper }}>
-                      <td style={{ padding: "10px", fontSize: "13px", fontWeight: 600 }}>{u.name}</td>
-                      <td style={{ padding: "10px", fontSize: "12px", color: T.muted }}>{u.email}</td>
-                      <td style={{ padding: "10px" }}><Stars score={u.min_relevance} /></td>
-                      <td style={{ padding: "10px", fontSize: "11px", color: T.muted }}>{u.categories?.join(", ") || "All"}</td>
-                      <td style={{ padding: "10px", textAlign: "right" }}>
-                        <button
-                          onClick={async () => {
-                            if (!window.confirm(`Remove ${u.name} (${u.email}) from digest?`)) return;
-                            await fetch(`${API_BASE}/api/users/${encodeURIComponent(u.email)}`, { method: "DELETE" });
-                            refetchUsers();
-                          }}
-                          style={{ padding: "4px 10px", fontSize: "10px", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 700, background: "transparent", color: "#c0392b", border: "1px solid #c0392b", cursor: "pointer" }}
-                        >
-                          Remove
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            <div style={{ marginTop: "20px" }}>
-              <button onClick={() => setShowSub(true)} style={{ padding: "11px 22px", border: "none", background: T.ink, color: T.paper, cursor: "pointer", fontWeight: 700, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.12em", textTransform: "uppercase" }}>
-                + ADD SUBSCRIBER
-              </button>
-            </div>
-          </div>
-        )}
       </main>
 
       {/* Footer */}
