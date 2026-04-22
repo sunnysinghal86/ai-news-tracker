@@ -92,10 +92,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="AI News Tracker",
+    title="AI Signal API",
     description="AI/ML news with summaries, competitor analysis and daily digests",
     version="1.0.0",
     lifespan=lifespan,
+    docs_url=None,      # Disable public Swagger UI
+    redoc_url=None,     # Disable public ReDoc
+    openapi_url=None,   # Disable OpenAPI schema entirely
 )
 
 # ── Admin auth ────────────────────────────────────────────────────────────────
