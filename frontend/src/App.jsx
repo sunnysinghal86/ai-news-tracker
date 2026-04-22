@@ -617,7 +617,7 @@ export default function App() {
       <footer style={{ borderTop: `3px solid ${T.ink}`, padding: "20px 32px", background: T.ink, color: T.paper, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
         <span style={{ fontFamily: "'Playfair Display', serif", fontSize: "22px", fontWeight: 900 }}>AI SIGNAL</span>
         
-        <a href={`${API_BASE}/docs`} target="_blank" rel="noopener noreferrer" style={{ fontSize: "11px", color: T.faint, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.1em", textDecoration: "none", borderBottom: `1px solid ${T.faint}` }}>API DOCS →</a>
+
       </footer>
 
       {showSub && <SubscribeDrawer onClose={() => setShowSub(false)} onSuccess={() => { setShowSub(false); setSubOk(true); setTimeout(() => setSubOk(false), 5000); }} />}
