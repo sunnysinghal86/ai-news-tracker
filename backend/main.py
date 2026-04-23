@@ -96,19 +96,23 @@ app = FastAPI(
     description="AI/ML news with summaries, competitor analysis and daily digests",
     version="1.0.0",
     lifespan=lifespan,
-    docs_url=None,      # Disable public Swagger UI
-    redoc_url=None,     # Disable public ReDoc
-    openapi_url=None,   # Disable OpenAPI schema entirely
+    docs_url=None,       # served at protected /api/admin/docs instead
+    redoc_url=None,
+    openapi_url="/api/admin/openapi.json",  # schema at protected URL
 )
 
 # ── Admin auth ────────────────────────────────────────────────────────────────
-async def require_admin(x_admin_key: str = Header(default="")):
-    """Validates X-Admin-Key header against ADMIN_API_KEY env var."""
+async def require_admin(
+    x_admin_key: str = Header(default=""),
+    key: str = "",          # also accept ?key=xxx as query param
+):
+    """Validates admin key from X-Admin-Key header OR ?key= query param."""
     expected = os.getenv("ADMIN_API_KEY", "")
     if not expected:
         logger.warning("ADMIN_API_KEY not set — admin endpoints are unprotected!")
         return
-    if x_admin_key != expected:
+    provided = x_admin_key or key
+    if provided != expected:
         raise HTTPException(status_code=401, detail="Invalid or missing admin key")
 
 
@@ -316,6 +320,33 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+
+@app.get("/api/admin/docs", include_in_schema=False)
+async def admin_docs(x_admin_key: str = Header(default="")):
+    """Swagger UI — protected by X-Admin-Key header."""
+    expected = os.getenv("ADMIN_API_KEY", "")
+    if expected and x_admin_key != expected:
+        raise HTTPException(status_code=401, detail="Invalid admin key")
+    from fastapi.openapi.docs import get_swagger_ui_html
+    return get_swagger_ui_html(
+        openapi_url="/api/admin/openapi.json",
+        title="AI Signal Admin API",
+    )
+
+
+@app.get("/api/admin/openapi.json", include_in_schema=False)
+async def admin_openapi(x_admin_key: str = Header(default="")):
+    """OpenAPI schema — protected by X-Admin-Key header."""
+    expected = os.getenv("ADMIN_API_KEY", "")
+    if expected and x_admin_key != expected:
+        raise HTTPException(status_code=401, detail="Invalid admin key")
+    from fastapi.openapi.utils import get_openapi
+    return get_openapi(
+        title=app.title,
+        version=app.version,
+        routes=app.routes,
+    )
 
 
 @app.get("/api/debug")
