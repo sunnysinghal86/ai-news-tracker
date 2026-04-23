@@ -8,7 +8,7 @@ import aiohttp
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, BackgroundTasks, Depends, Header, HTTPException
+from fastapi import FastAPI, BackgroundTasks, Depends, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -104,7 +104,7 @@ app = FastAPI(
 # ── Admin auth ────────────────────────────────────────────────────────────────
 async def require_admin(
     x_admin_key: str = Header(default=""),
-    key: str = "",          # also accept ?key=xxx as query param
+    key: str = Query(default=""),   # also accept ?key=xxx as query param
 ):
     """Validates admin key from X-Admin-Key header OR ?key= query param."""
     expected = os.getenv("ADMIN_API_KEY", "")
