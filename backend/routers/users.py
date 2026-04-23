@@ -24,7 +24,7 @@ import logging
 async def _require_admin(
     request: Request,
     x_admin_key: str = Header(default=""),
-    key: str = "",
+    key: str = Query(default=""),
 ):
     """Admin check — accepts X-Admin-Key header OR ?key= query param."""
     expected = os.getenv("ADMIN_API_KEY", "")
