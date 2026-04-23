@@ -21,12 +21,18 @@ from typing import List, Optional
 import os
 import logging
 
-async def _require_admin(request: Request):
-    """Local admin check for user management endpoints."""
+async def _require_admin(
+    request: Request,
+    x_admin_key: str = Header(default=""),
+    key: str = "",
+):
+    """Admin check — accepts X-Admin-Key header OR ?key= query param."""
     expected = os.getenv("ADMIN_API_KEY", "")
-    if expected and request.headers.get("X-Admin-Key", "") != expected:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=401, detail="Invalid admin key")
+    if expected:
+        provided = x_admin_key or key or request.headers.get("X-Admin-Key", "")
+        if provided != expected:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=401, detail="Invalid admin key")
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
