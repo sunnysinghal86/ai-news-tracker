@@ -96,9 +96,9 @@ app = FastAPI(
     description="AI/ML news with summaries, competitor analysis and daily digests",
     version="1.0.0",
     lifespan=lifespan,
-    docs_url=None,       # served at protected /api/admin/docs instead
+    docs_url=None,
     redoc_url=None,
-    openapi_url="/api/admin/openapi.json",  # schema at protected URL
+    openapi_url=None,
 )
 
 # ── Admin auth ────────────────────────────────────────────────────────────────
@@ -322,31 +322,6 @@ async def health():
     return {"status": "healthy"}
 
 
-@app.get("/api/admin/docs", include_in_schema=False)
-async def admin_docs(x_admin_key: str = Header(default="")):
-    """Swagger UI — protected by X-Admin-Key header."""
-    expected = os.getenv("ADMIN_API_KEY", "")
-    if expected and x_admin_key != expected:
-        raise HTTPException(status_code=401, detail="Invalid admin key")
-    from fastapi.openapi.docs import get_swagger_ui_html
-    return get_swagger_ui_html(
-        openapi_url="/api/admin/openapi.json",
-        title="AI Signal Admin API",
-    )
-
-
-@app.get("/api/admin/openapi.json", include_in_schema=False)
-async def admin_openapi(x_admin_key: str = Header(default="")):
-    """OpenAPI schema — protected by X-Admin-Key header."""
-    expected = os.getenv("ADMIN_API_KEY", "")
-    if expected and x_admin_key != expected:
-        raise HTTPException(status_code=401, detail="Invalid admin key")
-    from fastapi.openapi.utils import get_openapi
-    return get_openapi(
-        title=app.title,
-        version=app.version,
-        routes=app.routes,
-    )
 
 
 @app.get("/api/debug")
