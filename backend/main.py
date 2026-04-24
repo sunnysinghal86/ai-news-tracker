@@ -23,6 +23,9 @@ from routers import news, users, config
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+TURSO_URL   = os.getenv("TURSO_URL", "")
+TURSO_TOKEN = os.getenv("TURSO_TOKEN", "")
+
 scheduler = AsyncIOScheduler()
 
 
@@ -493,8 +496,10 @@ async def _reprocess_rivals_job():
                             p.id,
                         )
                     )
-            if TURSO_URL and TURSO_TOKEN:
-                db._conn.sync()
+            try:
+                db._conn.sync()  # sync embedded replica to Turso
+            except Exception:
+                pass  # not embedded replica — skip
         logger.info("Rivals reprocessing complete")
 
     except Exception as e:
