@@ -237,7 +237,15 @@ async def _analyse_article(article: RawArticle, session: aiohttp.ClientSession) 
         base.relevance_score = int(data.get("relevance_score", 5))
         base.is_product_or_tool = bool(data.get("is_product_or_tool", False))
         base.product_name = data.get("product_name", "")
-        # Keep competitors if explicitly provided OR if category implies a product
+
+        # Apply same source-based category override as _normalise_category in database.py
+        # This ensures company blog articles are treated as AI Model BEFORE
+        # deciding whether to keep competitors — fixing the category mismatch bug
+        COMPANY_BLOG_SOURCES = {"Anthropic Blog", "OpenAI Blog", "Google AI Blog", "AWS AI Blog"}
+        if article.source in COMPANY_BLOG_SOURCES and base.category == "Industry News":
+            base.category = "AI Model"  # same override as _normalise_category
+
+        # Keep competitors if is_product_or_tool OR category implies a product
         product_categories = {"AI Model", "Product/Tool", "Platform/Infrastructure"}
         is_product = base.is_product_or_tool or base.category in product_categories
         base.competitors = data.get("competitors", []) if is_product else []

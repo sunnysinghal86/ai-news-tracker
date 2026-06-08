@@ -388,6 +388,25 @@ async def debug(_=Depends(require_admin)):
                AND (competitors IS NULL OR competitors='[]' OR competitors='')
                ORDER BY relevance_score DESC LIMIT 5"""
         )
+        # Check category + rivals breakdown of what UI actually shows
+        ui_category_rows = await db._query(
+            """SELECT * FROM (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY source ORDER BY relevance_score DESC, published_at DESC
+                ) as rn FROM articles
+                WHERE substr(published_at,1,10) >= date('now','-7 days')
+                AND summary IS NOT NULL AND LENGTH(summary) > 20
+            ) ranked WHERE rn <= 5
+            ORDER BY relevance_score DESC LIMIT 40"""
+        )
+        ui_cats = {}
+        ui_with_rivals = 0
+        for r in ui_category_rows:
+            cat = r["category"] or "Unknown"
+            ui_cats[cat] = ui_cats.get(cat, 0) + 1
+            comps = r["competitors"]
+            if comps and comps != "[]" and comps != "":
+                ui_with_rivals += 1
 
     return {
         "db_by_source":        {r["source"]: {"total": r["total"], "oldest": r["oldest"], "newest": r["newest"]} for r in by_source},
@@ -402,6 +421,8 @@ async def debug(_=Depends(require_admin)):
              "competitors": r["competitors"]}
             for r in missing_rivals
         ],
+        "ui_category_breakdown": ui_cats,
+        "ui_articles_with_rivals": ui_with_rivals,
     }
 
 
@@ -480,8 +501,8 @@ async def _reprocess_rivals_job():
             rows = await db._query(
                 """SELECT * FROM articles
                    WHERE (
-                       is_product_or_tool = 1
-                       OR category IN ('AI Model', 'Product/Tool', 'Platform/Infrastructure')
+                       category IN ('AI Model', 'Product/Tool')
+                       OR source IN ('Anthropic Blog', 'OpenAI Blog', 'Google AI Blog', 'AWS AI Blog')
                    )
                    AND (competitors IS NULL OR competitors = '[]' OR competitors = '')
                    AND summary IS NOT NULL AND LENGTH(summary) > 20
@@ -540,17 +561,21 @@ async def _reprocess_rivals_job():
         async with get_db() as db:
             for p in processed:
                 logger.info(f"  Article {p.id[:8]}: is_product={p.is_product_or_tool} competitors={len(p.competitors or [])} category={p.category}")
-                if p.competitors:
+                # Also save if Claude changed the category to something with rivals
+                has_rivals = bool(p.competitors)
+                if has_rivals:
                     try:
                         await db._exec(
                             """UPDATE articles SET
                                 competitors=?, competitive_advantage=?,
-                                is_product_or_tool=1, product_name=?
+                                is_product_or_tool=1, product_name=?,
+                                category=?
                                WHERE id=?""",
                             (
                                 _json.dumps(p.competitors),
                                 p.competitive_advantage or "",
                                 p.product_name or "",
+                                p.category or "",
                                 p.id,
                             )
                         )
