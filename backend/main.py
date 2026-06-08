@@ -486,7 +486,7 @@ async def _reprocess_rivals_job():
                    AND (competitors IS NULL OR competitors = '[]' OR competitors = '')
                    AND summary IS NOT NULL AND LENGTH(summary) > 20
                    ORDER BY relevance_score DESC, published_at DESC
-                   LIMIT 20"""
+                   LIMIT 10"""
             )
 
         if not rows:
@@ -520,13 +520,20 @@ async def _reprocess_rivals_job():
                 score=0,
             ))
 
-        logger.info(f"Sending {len(articles_to_process)} articles to Claude for rivals analysis...")
-        try:
-            processed = await summarize_articles(articles_to_process)
-        except Exception as e:
-            logger.error(f"summarize_articles failed: {e}", exc_info=True)
-            return
-        logger.info(f"Claude returned {len(processed)} processed articles")
+        # Process in batches of 5 to avoid timeout on free tier
+        BATCH_SIZE = 5
+        processed = []
+        for i in range(0, len(articles_to_process), BATCH_SIZE):
+            batch = articles_to_process[i:i + BATCH_SIZE]
+            logger.info(f"Sending batch {i//BATCH_SIZE + 1} ({len(batch)} articles) to Claude...")
+            try:
+                result = await summarize_articles(batch)
+                processed.extend(result)
+                logger.info(f"Batch done — {len(result)} articles processed")
+            except Exception as e:
+                logger.error(f"Batch {i//BATCH_SIZE + 1} failed: {e}", exc_info=True)
+                continue  # try next batch even if this one fails
+        logger.info(f"Claude returned {len(processed)} processed articles total")
         updated = 0
 
         logger.info(f"Updating DB for articles with rivals...")
