@@ -322,6 +322,19 @@ async def health():
     return {"status": "healthy"}
 
 
+@app.get("/api/check-key")
+async def check_key(key: str = Query(default="")):
+    """Temporary endpoint — remove after debugging."""
+    expected = os.getenv("ADMIN_API_KEY", "")
+    return {
+        "key_provided":    key,
+        "key_length":      len(key),
+        "expected_length": len(expected),
+        "match":           key == expected,
+        "expected_set":    bool(expected),
+    }
+
+
 
 
 @app.get("/api/debug")
@@ -357,12 +370,38 @@ async def debug(_=Depends(require_admin)):
             "ORDER BY relevance_score DESC LIMIT 10"
         )
 
+    async with get_db() as db:
+        rivals_rows = await db._query(
+            """SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN is_product_or_tool=1 THEN 1 ELSE 0 END) as product_count,
+                SUM(CASE WHEN competitors IS NOT NULL AND competitors != '[]'
+                         AND competitors != '' THEN 1 ELSE 0 END) as has_rivals,
+                SUM(CASE WHEN category IN ('AI Model','Product/Tool','Platform/Infrastructure')
+                         THEN 1 ELSE 0 END) as product_cat_count
+               FROM articles"""
+        )
+        missing_rivals = await db._query(
+            """SELECT title, category, source, is_product_or_tool, competitors
+               FROM articles
+               WHERE category IN ('AI Model','Product/Tool','Platform/Infrastructure')
+               AND (competitors IS NULL OR competitors='[]' OR competitors='')
+               ORDER BY relevance_score DESC LIMIT 5"""
+        )
+
     return {
-        "db_by_source":       {r["source"]: {"total": r["total"], "oldest": r["oldest"], "newest": r["newest"]} for r in by_source},
+        "db_by_source":        {r["source"]: {"total": r["total"], "oldest": r["oldest"], "newest": r["newest"]} for r in by_source},
         "passing_30day_filter": {r["source"]: r["n"] for r in passing_filter},
-        "ui_shows":           ui_sources,
-        "ui_total":           len(ui_articles),
-        "old_articles_in_db": [dict(r) for r in old_articles],
+        "ui_shows":            ui_sources,
+        "ui_total":            len(ui_articles),
+        "old_articles_in_db":  [dict(r) for r in old_articles],
+        "rivals_stats":        dict(rivals_rows[0]) if rivals_rows else {},
+        "missing_rivals_sample": [
+            {"title": r["title"][:60], "category": r["category"],
+             "source": r["source"], "is_product": bool(r["is_product_or_tool"]),
+             "competitors": r["competitors"]}
+            for r in missing_rivals
+        ],
     }
 
 
@@ -425,11 +464,15 @@ async def reprocess_rivals(background_tasks: BackgroundTasks, _=Depends(require_
 
 
 async def _reprocess_rivals_job():
-    """Directly re-runs Claude on articles missing rivals."""
-    import aiohttp as _aiohttp
-    from summarizer import summarize_articles, enrich_all
+    """
+    Directly re-runs Claude on articles missing rivals.
+    Targets ALL categories that should have rivals, no date limit.
+    Passes title + content to Claude for better competitor detection.
+    """
+    from summarizer import summarize_articles
     from news_fetcher import RawArticle
     from datetime import datetime, timezone
+    import json as _json
 
     logger.info("Reprocessing rivals for AI Model / Product/Tool articles...")
     try:
@@ -442,8 +485,7 @@ async def _reprocess_rivals_job():
                    )
                    AND (competitors IS NULL OR competitors = '[]' OR competitors = '')
                    AND summary IS NOT NULL AND LENGTH(summary) > 20
-                   AND substr(published_at,1,10) >= date('now', '-14 days')
-                   ORDER BY relevance_score DESC
+                   ORDER BY relevance_score DESC, published_at DESC
                    LIMIT 20"""
             )
 
@@ -453,7 +495,6 @@ async def _reprocess_rivals_job():
 
         logger.info(f"Reprocessing {len(rows)} articles for rivals")
 
-        # Convert DB rows to RawArticle objects for summarizer
         articles_to_process = []
         for r in rows:
             try:
@@ -461,43 +502,60 @@ async def _reprocess_rivals_job():
             except Exception:
                 pub = datetime.now(timezone.utc)
 
+            full_content = " ".join(filter(None, [
+                r.get("title", ""),
+                r.get("summary", ""),
+                r.get("content", ""),
+            ]))
+
             articles_to_process.append(RawArticle(
                 id=r["id"],
                 title=r["title"],
                 url=r["url"],
                 source=r["source"],
                 published_at=pub,
-                content=r.get("summary", ""),  # use existing summary as content
+                content=full_content[:800],
                 author=r.get("author", ""),
                 tags=["reprocess"],
                 score=0,
             ))
 
-        # Re-run Claude with rivals-focused prompt
-        processed = await summarize_articles(articles_to_process)
-        logger.info(f"Reprocessed {len(processed)} articles")
+        logger.info(f"Sending {len(articles_to_process)} articles to Claude for rivals analysis...")
+        try:
+            processed = await summarize_articles(articles_to_process)
+        except Exception as e:
+            logger.error(f"summarize_articles failed: {e}", exc_info=True)
+            return
+        logger.info(f"Claude returned {len(processed)} processed articles")
+        updated = 0
 
-        # Update only competitors/rivals fields — preserve existing summary
+        logger.info(f"Updating DB for articles with rivals...")
         async with get_db() as db:
             for p in processed:
+                logger.info(f"  Article {p.id[:8]}: is_product={p.is_product_or_tool} competitors={len(p.competitors or [])} category={p.category}")
                 if p.competitors:
-                    await db._exec(
-                        """UPDATE articles SET
-                            competitors=?, competitive_advantage=?,
-                            is_product_or_tool=1, product_name=?
-                           WHERE id=?""",
-                        (
-                            __import__("json").dumps(p.competitors),
-                            p.competitive_advantage,
-                            p.product_name,
-                            p.id,
+                    try:
+                        await db._exec(
+                            """UPDATE articles SET
+                                competitors=?, competitive_advantage=?,
+                                is_product_or_tool=1, product_name=?
+                               WHERE id=?""",
+                            (
+                                _json.dumps(p.competitors),
+                                p.competitive_advantage or "",
+                                p.product_name or "",
+                                p.id,
+                            )
                         )
-                    )
+                        updated += 1
+                    except Exception as e:
+                        logger.error(f"DB update failed for {p.id}: {e}")
             try:
-                db._conn.sync()  # sync embedded replica to Turso
+                db._conn.sync()
             except Exception:
-                pass  # not embedded replica — skip
-        logger.info("Rivals reprocessing complete")
+                pass
+
+        logger.info(f"Rivals reprocessing complete — {updated}/{len(processed)} articles updated with rivals")
 
     except Exception as e:
         logger.error(f"Rivals reprocessing failed: {e}", exc_info=True)
