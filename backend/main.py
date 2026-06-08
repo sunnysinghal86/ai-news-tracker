@@ -507,7 +507,7 @@ async def _reprocess_rivals_job():
                    AND (competitors IS NULL OR competitors = '[]' OR competitors = '')
                    AND summary IS NOT NULL AND LENGTH(summary) > 20
                    ORDER BY relevance_score DESC, published_at DESC
-                   LIMIT 10"""
+                   LIMIT 5"""
             )
 
         if not rows:
@@ -541,19 +541,21 @@ async def _reprocess_rivals_job():
                 score=0,
             ))
 
-        # Process in batches of 5 to avoid timeout on free tier
-        BATCH_SIZE = 5
+        # Process one article at a time — avoids accumulated sleep delays
+        # Each call to summarize_articles([single]) takes ~5s max
         processed = []
-        for i in range(0, len(articles_to_process), BATCH_SIZE):
-            batch = articles_to_process[i:i + BATCH_SIZE]
-            logger.info(f"Sending batch {i//BATCH_SIZE + 1} ({len(batch)} articles) to Claude...")
+        for i, art in enumerate(articles_to_process):
+            logger.info(f"Processing article {i+1}/{len(articles_to_process)}: {art.title[:50]}")
             try:
-                result = await summarize_articles(batch)
-                processed.extend(result)
-                logger.info(f"Batch done — {len(result)} articles processed")
+                result = await summarize_articles([art])
+                if result:
+                    processed.extend(result)
+                    p = result[0]
+                    logger.info(f"  → competitors={len(p.competitors or [])} category={p.category}")
             except Exception as e:
-                logger.error(f"Batch {i//BATCH_SIZE + 1} failed: {e}", exc_info=True)
-                continue  # try next batch even if this one fails
+                logger.error(f"Claude failed for article {art.id}: {e}")
+                continue
+            await asyncio.sleep(1)  # small gap between calls
         logger.info(f"Claude returned {len(processed)} processed articles total")
         updated = 0
 
