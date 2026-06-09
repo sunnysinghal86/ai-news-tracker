@@ -54,8 +54,6 @@ async def lifespan(app: FastAPI):
                       misfire_grace_time=60)    # 1 min grace — Pro tier, restarts are rare
     # Keep-alive ping — prevents Render free tier from spinning down
     # Pings /health every 10 minutes so the server stays warm for the 8 AM digest
-    scheduler.add_job(keep_alive_ping, "interval", minutes=10,
-                      id="keep_alive", replace_existing=True)
     scheduler.start()
     logger.info("Scheduler started")
 
