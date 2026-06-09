@@ -642,25 +642,33 @@ async def _reprocess_implications_job(force: bool = False):
 
 @app.post("/api/fix-implication-wording")
 async def fix_implication_wording(_=Depends(require_admin)):
-    """One-time fix: replace 'Platform engineers' with 'Engineers' in all implications."""
+    """Fix all implication wording variants in one shot."""
     async with get_db() as db:
         result = await db._query(
-            "SELECT COUNT(*) as n FROM articles WHERE platform_implication LIKE 'Platform engineer%'"
+            "SELECT COUNT(*) as n FROM articles WHERE platform_implication IS NOT NULL AND platform_implication != ''"
         )
         count = result[0]["n"] if result else 0
+        # Fix "Engineerscan" → "Engineers can" (from previous bad SUBSTR fix)
         await db._exec(
-            """UPDATE articles
-               SET platform_implication = 'Engineers' || SUBSTR(platform_implication, 19)
-               WHERE platform_implication LIKE 'Platform engineers %'"""
+            "UPDATE articles SET platform_implication = REPLACE(platform_implication, 'Engineerscan', 'Engineers can') "
+            "WHERE platform_implication LIKE 'Engineerscan%'"
         )
         await db._exec(
-            """UPDATE articles
-               SET platform_implication = 'Engineer' || SUBSTR(platform_implication, 18)
-               WHERE platform_implication LIKE 'Platform engineer %'"""
+            "UPDATE articles SET platform_implication = REPLACE(platform_implication, 'Engineercan', 'Engineer can') "
+            "WHERE platform_implication LIKE 'Engineercan%'"
+        )
+        # Fix any remaining "Platform engineers" variants
+        await db._exec(
+            "UPDATE articles SET platform_implication = REPLACE(platform_implication, 'Platform engineers', 'Engineers') "
+            "WHERE platform_implication LIKE '%Platform engineers%'"
+        )
+        await db._exec(
+            "UPDATE articles SET platform_implication = REPLACE(platform_implication, 'Platform engineer', 'Engineer') "
+            "WHERE platform_implication LIKE '%Platform engineer%'"
         )
         try: db._conn.sync()
         except Exception: pass
-    return {"message": f"Fixed wording in {count} articles — no Claude needed"}
+    return {"message": f"Fixed wording across {count} articles"}
 
 
 @app.post("/api/trigger-refresh")
