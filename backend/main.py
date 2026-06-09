@@ -650,12 +650,12 @@ async def fix_implication_wording(_=Depends(require_admin)):
         count = result[0]["n"] if result else 0
         await db._exec(
             """UPDATE articles
-               SET platform_implication = 'Engineers' || SUBSTR(platform_implication, 20)
+               SET platform_implication = 'Engineers' || SUBSTR(platform_implication, 19)
                WHERE platform_implication LIKE 'Platform engineers %'"""
         )
         await db._exec(
             """UPDATE articles
-               SET platform_implication = 'Engineer' || SUBSTR(platform_implication, 19)
+               SET platform_implication = 'Engineer' || SUBSTR(platform_implication, 18)
                WHERE platform_implication LIKE 'Platform engineer %'"""
         )
         try: db._conn.sync()
