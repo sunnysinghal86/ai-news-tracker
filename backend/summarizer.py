@@ -207,7 +207,7 @@ async def _analyse_article(article: RawArticle, session: aiohttp.ClientSession) 
         '"product_name":"<name or empty>",'
         '"competitors":[{"name":"Competitor Name","description":"what they do","comparison":"how this differs"}],'
         '"competitive_advantage":"one specific differentiator",'
-        '"platform_implication":"For platform engineers: one sentence on what this means for their work — or empty string if not applicable"}'
+        '"platform_implication":"For engineers: one sentence on what this means for their work — or empty string if not applicable"}'
     )
 
     base = ProcessedArticle(
