@@ -254,6 +254,22 @@ function ArticleCard({ article, expanded, onToggle, isLead }) {
         </div>
       )}
 
+      {/* Platform implication — always visible, no click needed */}
+      {article.platform_implication && (
+        <div style={{
+          margin: "4px 0 8px",
+          padding: "6px 10px",
+          borderLeft: `3px solid ${T.teal}`,
+          fontSize: "12px",
+          color: T.teal,
+          fontFamily: "'Source Serif 4', Georgia, serif",
+          fontStyle: "italic",
+          lineHeight: 1.5,
+        }}>
+          💡 {article.platform_implication}
+        </div>
+      )}
+
       {/* Collapsible competitor analysis */}
       {expanded && hasRivals && (
         <div onClick={e => e.stopPropagation()}>
@@ -378,7 +394,7 @@ export default function App() {
   const [activeTab, setActiveTab]         = useState("feed");
 
 
-  const { data: news, loading, refetch } = useApi("/api/news", { limit: 40, ...filters });
+  const { data: news, loading, refetch } = useApi("/api/news", { limit: 20, ...filters });
   const { data: summary }                = useApi("/api/summary"); // stats + config in one call
 
   const stats = summary;
