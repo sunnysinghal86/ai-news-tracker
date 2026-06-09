@@ -196,7 +196,8 @@ class Database:
                     is_product_or_tool INTEGER DEFAULT 0,
                     product_name TEXT,
                     competitors TEXT,
-                    competitive_advantage TEXT
+                    competitive_advantage TEXT,
+                    platform_implication TEXT DEFAULT ""
                 )""",
                 "CREATE INDEX IF NOT EXISTS idx_articles_relevance ON articles(relevance_score)",
                 "CREATE INDEX IF NOT EXISTS idx_articles_category ON articles(category)",
@@ -240,6 +241,12 @@ class Database:
             self._conn.commit()
             # Migration: add approval_token column if upgrading
             try:
+                self._conn.execute("ALTER TABLE articles ADD COLUMN platform_implication TEXT DEFAULT ''")
+                self._conn.commit()
+                logger.info("Migration: added platform_implication column")
+            except Exception:
+                pass
+            try:
                 self._conn.execute("ALTER TABLE users ADD COLUMN approval_token TEXT")
                 self._conn.commit()
                 logger.info("Migration: added approval_token column")
@@ -281,7 +288,7 @@ class Database:
                     """INSERT INTO articles
                        (id,title,url,source,author,score,published_at,
                         summary,category,tags,relevance_score,
-                        is_product_or_tool,product_name,competitors,competitive_advantage)
+                        is_product_or_tool,product_name,competitors,competitive_advantage,platform_implication)
                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                        ON CONFLICT(id) DO UPDATE SET
                         summary=excluded.summary,
@@ -292,6 +299,7 @@ class Database:
                         product_name=excluded.product_name,
                         competitors=excluded.competitors,
                         competitive_advantage=excluded.competitive_advantage,
+                        platform_implication=excluded.platform_implication,
                         fetched_at=datetime('now')""",
                     (
                         a.id, a.title, a.url, a.source, a.author, a.score,
@@ -302,6 +310,7 @@ class Database:
                         a.product_name,
                         json.dumps(a.competitors or []),
                         a.competitive_advantage,
+                        getattr(a, "platform_implication", "") or "",
                     )
                 )
             self._conn.commit()

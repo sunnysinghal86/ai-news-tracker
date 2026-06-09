@@ -41,6 +41,7 @@ class ProcessedArticle:
     product_name: str = ""
     competitors: Optional[List[dict]] = None
     competitive_advantage: str = ""
+    platform_implication: str = ""
     relevance_score: int = 5
 
 
@@ -205,7 +206,8 @@ async def _analyse_article(article: RawArticle, session: aiohttp.ClientSession) 
         '"is_product_or_tool":<bool>,'
         '"product_name":"<name or empty>",'
         '"competitors":[{"name":"Competitor Name","description":"what they do","comparison":"how this differs"}],'
-        '"competitive_advantage":"one specific differentiator"}'
+        '"competitive_advantage":"one specific differentiator",'
+        '"platform_implication":"For platform engineers: one sentence on what this means for their work — or empty string if not applicable"}'
     )
 
     base = ProcessedArticle(
@@ -235,6 +237,7 @@ async def _analyse_article(article: RawArticle, session: aiohttp.ClientSession) 
         base.category = data.get("category", "Industry News")
         base.tags = data.get("tags", list(article.tags or []))
         base.relevance_score = int(data.get("relevance_score", 5))
+        base.platform_implication = data.get("platform_implication", "") or ""
         base.is_product_or_tool = bool(data.get("is_product_or_tool", False))
         base.product_name = data.get("product_name", "")
 
