@@ -3,6 +3,7 @@ AI News Tracker - FastAPI Backend
 """
 
 import os
+import re
 import asyncio
 import aiohttp
 import logging
