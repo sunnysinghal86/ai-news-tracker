@@ -557,6 +557,81 @@ async def _reprocess_rivals_job():
     except Exception as e:
         logger.error(f"Rivals reprocessing failed: {e}", exc_info=True)
 
+@app.post("/api/reprocess-implications")
+async def reprocess_implications(background_tasks: BackgroundTasks, _=Depends(require_admin)):
+    """Backfill platform_implication for existing articles that are missing it."""
+    background_tasks.add_task(_reprocess_implications_job)
+    return {"message": "Implications backfill started — check logs"}
+
+
+async def _reprocess_implications_job():
+    """Re-runs Claude on articles missing platform_implication, 10 at a time."""
+    from summarizer import summarize_articles
+    from news_fetcher import RawArticle
+    from datetime import datetime, timezone
+    import json as _json
+
+    logger.info("Backfilling platform_implication for existing articles...")
+    try:
+        async with get_db() as db:
+            rows = await db._query(
+                """SELECT * FROM articles
+                   WHERE (platform_implication IS NULL OR platform_implication = '')
+                   AND summary IS NOT NULL AND LENGTH(summary) > 20
+                   ORDER BY relevance_score DESC, published_at DESC
+                   LIMIT 10"""
+            )
+
+        if not rows:
+            logger.info("All articles already have platform_implication")
+            return
+
+        logger.info(f"Backfilling {len(rows)} articles...")
+        updated = 0
+
+        for r in rows:
+            try:
+                pub = datetime.fromisoformat(r["published_at"].replace("Z", "+00:00"))
+            except Exception:
+                pub = datetime.now(timezone.utc)
+
+            full_content = " ".join(filter(None, [
+                r.get("title", ""), r.get("summary", ""), r.get("content", ""),
+            ]))
+
+            article = RawArticle(
+                id=r["id"], title=r["title"], url=r["url"],
+                source=r["source"], published_at=pub,
+                content=full_content[:800], author=r.get("author", ""),
+                tags=["reprocess"], score=0,
+            )
+
+            try:
+                result = await summarize_articles([article])
+                if result and result[0].platform_implication:
+                    async with get_db() as db:
+                        await db._exec(
+                            "UPDATE articles SET platform_implication=? WHERE id=?",
+                            (result[0].platform_implication, r["id"])
+                        )
+                    updated += 1
+                    logger.info(f"  ✓ {r['title'][:50]}")
+            except Exception as e:
+                logger.error(f"Failed for {r['id']}: {e}")
+                continue
+
+            await asyncio.sleep(1)
+
+        async with get_db() as db:
+            try: db._conn.sync()
+            except Exception: pass
+
+        logger.info(f"Implications backfill complete — {updated}/{len(rows)} updated")
+
+    except Exception as e:
+        logger.error(f"Implications backfill failed: {e}", exc_info=True)
+
+
 @app.post("/api/trigger-refresh")
 async def trigger_refresh(background_tasks: BackgroundTasks, _=Depends(require_admin)):
     background_tasks.add_task(refresh_news_job)
