@@ -23,8 +23,8 @@ import logging
 
 async def _require_admin(
     request: Request,
-    x_admin_key: str = Header(default=""),
-    key: str = Query(default=""),
+    x_admin_key: str = Header(default="", include_in_schema=False),
+    key: str = Query(default="", description="Admin API key", json_schema_extra={"format": "password"}),
 ):
     """Admin check — accepts X-Admin-Key header OR ?key= query param."""
     expected = os.getenv("ADMIN_API_KEY", "")
