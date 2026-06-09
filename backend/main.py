@@ -643,32 +643,32 @@ async def _reprocess_implications_job(force: bool = False):
 @app.post("/api/fix-implication-wording")
 async def fix_implication_wording(_=Depends(require_admin)):
     """Fix all implication wording variants in one shot."""
+    import re as _re
     async with get_db() as db:
-        result = await db._query(
-            "SELECT COUNT(*) as n FROM articles WHERE platform_implication IS NOT NULL AND platform_implication != ''"
+        rows = await db._query(
+            "SELECT id, platform_implication FROM articles "
+            "WHERE platform_implication IS NOT NULL AND platform_implication != ''"
         )
-        count = result[0]["n"] if result else 0
-        # Fix "Engineerscan" → "Engineers can" (from previous bad SUBSTR fix)
-        await db._exec(
-            "UPDATE articles SET platform_implication = REPLACE(platform_implication, 'Engineerscan', 'Engineers can') "
-            "WHERE platform_implication LIKE 'Engineerscan%'"
-        )
-        await db._exec(
-            "UPDATE articles SET platform_implication = REPLACE(platform_implication, 'Engineercan', 'Engineer can') "
-            "WHERE platform_implication LIKE 'Engineercan%'"
-        )
-        # Fix any remaining "Platform engineers" variants
-        await db._exec(
-            "UPDATE articles SET platform_implication = REPLACE(platform_implication, 'Platform engineers', 'Engineers') "
-            "WHERE platform_implication LIKE '%Platform engineers%'"
-        )
-        await db._exec(
-            "UPDATE articles SET platform_implication = REPLACE(platform_implication, 'Platform engineer', 'Engineer') "
-            "WHERE platform_implication LIKE '%Platform engineer%'"
-        )
+        fixed_count = 0
+        for row in rows:
+            original = row["platform_implication"]
+            fixed = original
+            # Fix "Engineersword" → "Engineers word" (space after plural)
+            fixed = _re.sub(r'Engineers([^ ])', lambda m: 'Engineers ' + m.group(1), fixed)
+            # Fix "Engineerword" → "Engineer word" (space after singular, not before 's')
+            fixed = _re.sub(r'Engineer([^ s])', lambda m: 'Engineer ' + m.group(1), fixed)
+            # Fix Platform engineer variants
+            fixed = fixed.replace('Platform engineers', 'Engineers')
+            fixed = fixed.replace('Platform engineer', 'Engineer')
+            if fixed != original:
+                await db._exec(
+                    "UPDATE articles SET platform_implication=? WHERE id=?",
+                    (fixed, row["id"])
+                )
+                fixed_count += 1
         try: db._conn.sync()
         except Exception: pass
-    return {"message": f"Fixed wording across {count} articles"}
+    return {"message": f"Fixed wording in {fixed_count} articles"}
 
 
 @app.post("/api/trigger-refresh")
