@@ -23,26 +23,25 @@ from routers import news, users, config
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+class _MaskKeyFilter(logging.Filter):
+    """Masks ?key=... values in log output."""
+    _pat = re.compile(r"key=[^\s&]+", re.IGNORECASE)
+    def filter(self, record):
+        record.msg = self._pat.sub("key=***", str(record.msg))
+        return True
+
+# Apply to root logger so uvicorn access logs are also masked
+for _h in logging.root.handlers:
+    _h.addFilter(_MaskKeyFilter())
+logging.root.addFilter(_MaskKeyFilter())
+
 TURSO_URL   = os.getenv("TURSO_URL", "")
 TURSO_TOKEN = os.getenv("TURSO_TOKEN", "")
 
 scheduler = AsyncIOScheduler()
 
 
-async def keep_alive_ping():
-    """Ping own /health endpoint every 10 min to prevent Render free tier spin-down."""
-    api_url = os.getenv("API_URL", "")
-    if not api_url:
-        return
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{api_url}/health", timeout=aiohttp.ClientTimeout(total=5)) as r:
-                logger.debug(f"Keep-alive ping: {r.status}")
-    except Exception as e:
-        logger.debug(f"Keep-alive ping failed: {e}")
 
-
-@asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
 
@@ -51,7 +50,7 @@ async def lifespan(app: FastAPI):
                       misfire_grace_time=300)   # run even if missed by up to 5 min
     scheduler.add_job(send_digest_job, "cron", hour=8, minute=0,
                       timezone="UTC", id="daily_digest", replace_existing=True,
-                      misfire_grace_time=900)   # 15 min grace — handles slow Render restarts
+                      misfire_grace_time=60)    # 1 min grace — Pro tier, restarts are rare
     # Keep-alive ping — prevents Render free tier from spinning down
     # Pings /health every 10 minutes so the server stays warm for the 8 AM digest
     scheduler.add_job(keep_alive_ping, "interval", minutes=10,
@@ -81,14 +80,6 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(refresh_news_job())
 
-    # Startup digest check — send missed digest any time server starts after 8 AM UTC
-    # Uses a DB flag to track whether digest was sent today
-    from datetime import datetime, timezone
-    now_utc = datetime.now(timezone.utc)
-    if now_utc.hour >= 8:
-        logger.info(f"Server started at {now_utc.hour}:{now_utc.minute} UTC — "
-                    f"will check for missed digest after startup")
-        asyncio.create_task(_send_missed_digest())
 
     yield
     scheduler.shutdown()
@@ -103,8 +94,8 @@ app = FastAPI(
 
 # ── Admin auth ────────────────────────────────────────────────────────────────
 async def require_admin(
-    x_admin_key: str = Header(default=""),
-    key: str = Query(default=""),   # also accept ?key=xxx as query param
+    x_admin_key: str = Header(default="", include_in_schema=False),
+    key: str = Query(default="", description="Admin API key", json_schema_extra={"format": "password"}),
 ):
     """Validates admin key from X-Admin-Key header OR ?key= query param."""
     expected = os.getenv("ADMIN_API_KEY", "")
@@ -189,47 +180,6 @@ async def refresh_news_job():
     except Exception as e:
         logger.error(f"News refresh failed: {e}", exc_info=True)
 
-
-async def _send_missed_digest():
-    """
-    Fires digest if server restarted and digest hasn't been sent today.
-    Checks DB for a digest_sent_date marker — if not today, sends digest.
-    Waits 3 min after startup to let the refresh job run first.
-    """
-    import asyncio as _asyncio
-    await _asyncio.sleep(180)  # wait 3 min for refresh to complete first
-
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc)
-    today = now.strftime("%Y-%m-%d")
-
-    # Check if digest was already sent today using a simple marker in DB
-    try:
-        async with get_db() as db:
-            rows = await db._query(
-                "SELECT value FROM kv_store WHERE key='digest_sent_date'"
-            )
-            last_sent = rows[0]["value"] if rows else None
-
-        if last_sent == today:
-            logger.info(f"Digest already sent today ({today}) — skipping")
-            return
-
-        logger.info(f"Digest not sent today (last={last_sent}) — sending now")
-        await send_digest_job()
-
-        # Mark digest as sent today
-        async with get_db() as db:
-            await db._exec(
-                "INSERT OR REPLACE INTO kv_store (key, value) VALUES ('digest_sent_date', ?)",
-                (today,)
-            )
-    except Exception as e:
-        # kv_store table might not exist yet — fall back to hour-based check
-        logger.warning(f"Digest flag check failed ({e}) — using hour fallback")
-        if 8 <= now.hour < 23:
-            logger.info("Sending missed digest (hour fallback)")
-            await send_digest_job()
 
 
 async def send_digest_job():
@@ -388,6 +338,14 @@ async def debug(_=Depends(require_admin)):
                AND (competitors IS NULL OR competitors='[]' OR competitors='')
                ORDER BY relevance_score DESC LIMIT 5"""
         )
+        # Sample articles that DO have rivals — check if they're in 7-day window
+        has_rivals_sample = await db._query(
+            """SELECT title, category, source, published_at,
+                      substr(competitors,1,80) as competitors_preview
+               FROM articles
+               WHERE competitors IS NOT NULL AND competitors != '[]' AND competitors != ''
+               ORDER BY published_at DESC LIMIT 5"""
+        )
         # Check category + rivals breakdown of what UI actually shows
         ui_category_rows = await db._query(
             """SELECT * FROM (
@@ -420,6 +378,12 @@ async def debug(_=Depends(require_admin)):
              "source": r["source"], "is_product": bool(r["is_product_or_tool"]),
              "competitors": r["competitors"]}
             for r in missing_rivals
+        ],
+        "has_rivals_sample": [
+            {"title": r["title"][:60], "category": r["category"],
+             "source": r["source"], "published_at": r["published_at"],
+             "competitors_preview": r["competitors_preview"]}
+            for r in has_rivals_sample
         ],
         "ui_category_breakdown": ui_cats,
         "ui_articles_with_rivals": ui_with_rivals,
@@ -507,7 +471,7 @@ async def _reprocess_rivals_job():
                    AND (competitors IS NULL OR competitors = '[]' OR competitors = '')
                    AND summary IS NOT NULL AND LENGTH(summary) > 20
                    ORDER BY relevance_score DESC, published_at DESC
-                   LIMIT 5"""
+                   LIMIT 20"""
             )
 
         if not rows:

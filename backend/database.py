@@ -289,7 +289,7 @@ class Database:
                        (id,title,url,source,author,score,published_at,
                         summary,category,tags,relevance_score,
                         is_product_or_tool,product_name,competitors,competitive_advantage,platform_implication)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                        ON CONFLICT(id) DO UPDATE SET
                         summary=excluded.summary,
                         category=excluded.category,
