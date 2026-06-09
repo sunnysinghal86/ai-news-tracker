@@ -640,6 +640,29 @@ async def _reprocess_implications_job(force: bool = False):
         logger.error(f"Implications backfill failed: {e}", exc_info=True)
 
 
+@app.post("/api/fix-implication-wording")
+async def fix_implication_wording(_=Depends(require_admin)):
+    """One-time fix: replace 'Platform engineers' with 'Engineers' in all implications."""
+    async with get_db() as db:
+        result = await db._query(
+            "SELECT COUNT(*) as n FROM articles WHERE platform_implication LIKE 'Platform engineer%'"
+        )
+        count = result[0]["n"] if result else 0
+        await db._exec(
+            """UPDATE articles
+               SET platform_implication = 'Engineers' || SUBSTR(platform_implication, 20)
+               WHERE platform_implication LIKE 'Platform engineers %'"""
+        )
+        await db._exec(
+            """UPDATE articles
+               SET platform_implication = 'Engineer' || SUBSTR(platform_implication, 19)
+               WHERE platform_implication LIKE 'Platform engineer %'"""
+        )
+        try: db._conn.sync()
+        except Exception: pass
+    return {"message": f"Fixed wording in {count} articles — no Claude needed"}
+
+
 @app.post("/api/trigger-refresh")
 async def trigger_refresh(background_tasks: BackgroundTasks, _=Depends(require_admin)):
     background_tasks.add_task(refresh_news_job)
