@@ -558,13 +558,17 @@ async def _reprocess_rivals_job():
         logger.error(f"Rivals reprocessing failed: {e}", exc_info=True)
 
 @app.post("/api/reprocess-implications")
-async def reprocess_implications(background_tasks: BackgroundTasks, _=Depends(require_admin)):
-    """Backfill platform_implication for existing articles that are missing it."""
-    background_tasks.add_task(_reprocess_implications_job)
-    return {"message": "Implications backfill started — check logs"}
+async def reprocess_implications(
+    background_tasks: BackgroundTasks,
+    force: bool = Query(default=False, description="If true, reprocess ALL articles including ones that already have implications"),
+    _=Depends(require_admin)
+):
+    """Backfill platform_implication for articles missing it. Use force=true to reprocess all."""
+    background_tasks.add_task(_reprocess_implications_job, force)
+    return {"message": f"Implications backfill started (force={force}) — check logs"}
 
 
-async def _reprocess_implications_job():
+async def _reprocess_implications_job(force: bool = False):
     """Re-runs Claude on articles missing platform_implication, 10 at a time."""
     from summarizer import summarize_articles
     from news_fetcher import RawArticle
@@ -574,12 +578,16 @@ async def _reprocess_implications_job():
     logger.info("Backfilling platform_implication for existing articles...")
     try:
         async with get_db() as db:
+            where_clause = (
+                "WHERE summary IS NOT NULL AND LENGTH(summary) > 20"
+                if force else
+                "WHERE (platform_implication IS NULL OR platform_implication = '') AND summary IS NOT NULL AND LENGTH(summary) > 20"
+            )
             rows = await db._query(
-                """SELECT * FROM articles
-                   WHERE (platform_implication IS NULL OR platform_implication = '')
-                   AND summary IS NOT NULL AND LENGTH(summary) > 20
+                f"""SELECT * FROM articles
+                   {where_clause}
                    ORDER BY relevance_score DESC, published_at DESC
-                   LIMIT 10"""
+                   LIMIT 100"""
             )
 
         if not rows:
