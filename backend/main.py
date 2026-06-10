@@ -91,6 +91,9 @@ async def lifespan(app: FastAPI):
     scheduler.shutdown()
 
 
+# Prevent concurrent digest sends (scheduler + missed-digest startup check)
+_digest_running = False
+
 app = FastAPI(
     title="AI Signal API",
     description="AI/ML news with summaries, competitor analysis and daily digests",
@@ -221,6 +224,11 @@ async def _send_missed_digest():
 
 
 async def send_digest_job():
+    global _digest_running
+    if _digest_running:
+        logger.warning("Digest already running — skipping duplicate trigger")
+        return
+    _digest_running = True
     logger.info("Sending daily digest...")
     try:
         async with get_db() as db:
@@ -231,8 +239,7 @@ async def send_digest_job():
                 # Step 1 — get article IDs already sent to this subscriber (last 3 days)
                 async with get_db() as db:
                     already_sent = await db.get_sent_article_ids(user.email, days=3)
-                if already_sent:
-                    logger.info(f"Excluding {len(already_sent)} already-sent articles for {user.email}")
+                logger.info(f"Sent article exclusion list for {user.email}: {len(already_sent)} articles")
 
                 # Step 2 — fetch candidate articles excluding already-sent ones
                 async with get_db() as db:
@@ -253,7 +260,33 @@ async def send_digest_job():
                         )
 
                 if not candidates:
-                    logger.info(f"No articles for {user.email} — skipping")
+                    # Pool exhausted — trigger a fresh fetch and retry
+                    logger.warning(
+                        f"Article pool exhausted for {user.email} after exclusions — "
+                        f"fetching fresh articles before retrying"
+                    )
+                    await refresh_news_job()
+
+                    # Retry with exclusions after fresh fetch
+                    async with get_db() as db:
+                        candidates = await db.get_top_articles(
+                            limit=30,
+                            min_relevance=user.min_relevance or 5,
+                            hours=48,
+                            exclude_ids=already_sent,
+                        )
+
+                if not candidates:
+                    # Still nothing — widen to 30 days but keep exclusions to avoid repeats
+                    logger.warning(f"Still no articles for {user.email} — widening to 30 days")
+                    async with get_db() as db:
+                        candidates = await db.get_top_articles(
+                            limit=30, min_relevance=5, hours=360,
+                            exclude_ids=already_sent,
+                        )
+
+                if not candidates:
+                    logger.error(f"No articles available for {user.email} — skipping digest")
                     return
 
                 # Step 2 — run editorial curator
@@ -298,6 +331,8 @@ async def send_digest_job():
             )
     except Exception as e:
         logger.error(f"Digest failed: {e}", exc_info=True)
+    finally:
+        _digest_running = False
 
 
 @app.get("/")

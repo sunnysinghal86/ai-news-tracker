@@ -408,7 +408,7 @@ class Database:
             excl_params = list(exclude_ids)
 
         # Try preferred window with min_relevance
-        for window in [hours, 48, 168]:
+        for window in [hours, 48, 168, 360]:
             params = [min_relevance, window] + list(self.ACTIVE_SOURCES) + cat_params + excl_params
             rows = await self._query(f"""
                 SELECT * FROM (
@@ -570,7 +570,7 @@ class Database:
             unsubscribe_token=r.get("unsubscribe_token"),
         )
 
-    async def get_sent_article_ids(self, email: str, days: int = 3) -> set:
+    async def get_sent_article_ids(self, email: str, days: int = 1) -> set:
         """Returns article IDs already sent to this subscriber in the last N days."""
         rows = await self._query(
             "SELECT article_id FROM digest_sent_articles "
