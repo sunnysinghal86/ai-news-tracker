@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
                       misfire_grace_time=300)   # run even if missed by up to 5 min
     scheduler.add_job(send_digest_job, "cron", hour=8, minute=0,
                       timezone="UTC", id="daily_digest", replace_existing=True,
-                      misfire_grace_time=60)    # 1 min grace — Pro tier, restarts are rare
+                      misfire_grace_time=900)   # 15 min grace — free tier restarts can be slow
     # Keep-alive ping — prevents Render free tier from spinning down
     # Pings /health every 10 minutes so the server stays warm for the 8 AM digest
     scheduler.start()
@@ -79,6 +79,13 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(refresh_news_job())
 
+    # On free tier, server can restart at any time including 8 AM
+    # Check if digest was missed and send it if so
+    from datetime import datetime, timezone
+    now_utc = datetime.now(timezone.utc)
+    if now_utc.hour >= 8:
+        logger.info(f"Server started at {now_utc.hour}:{now_utc.minute} UTC — checking for missed digest")
+        asyncio.create_task(_send_missed_digest())
 
     yield
     scheduler.shutdown()
@@ -179,6 +186,38 @@ async def refresh_news_job():
     except Exception as e:
         logger.error(f"News refresh failed: {e}", exc_info=True)
 
+
+
+async def _send_missed_digest():
+    """
+    Fires digest if server restarted and digest hasn't been sent today.
+    Uses kv_store flag to avoid double-sending. Waits 3 min after startup
+    to let the refresh job run first.
+    """
+    await asyncio.sleep(180)  # wait 3 min for refresh to complete first
+
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    today = now.strftime("%Y-%m-%d")
+
+    try:
+        async with get_db() as db:
+            rows = await db._query(
+                "SELECT value FROM kv_store WHERE key='digest_sent_date'"
+            )
+            last_sent = rows[0]["value"] if rows else None
+
+        if last_sent == today:
+            logger.info(f"Digest already sent today ({today}) — skipping")
+            return
+
+        logger.info(f"Digest not sent today (last={last_sent}) — sending missed digest")
+        await send_digest_job()
+
+    except Exception as e:
+        logger.warning(f"Missed digest check failed ({e}) — using hour fallback")
+        if 8 <= now.hour < 23:
+            await send_digest_job()
 
 
 async def send_digest_job():
